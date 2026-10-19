@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#10b981" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MUMS" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+</head>
+<body>
+
+  <!-- APP OPDATERING BANNER (vises automatisk når ny version er klar) -->
+  <div id="updateBanner" class="update-banner hidden" role="alert" aria-live="polite">
+    <span class="update-banner-icon">🆕</span>
+    <div class="update-banner-text">
+      <strong>Ny version af MUMS er klar!</strong>
+      <span>Opdater nu for at få de nyeste funktioner og forbedringer.</span>
+    </div>
+    <button id="btnUpdateNow" class="btn-update-now">🔄 Opdater nu</button>
+    <button id="btnUpdateDismiss" class="btn-update-dismiss" aria-label="Luk">✕</button>
+  </div>
+
+  <!-- APP HEADER (Sticky top bar) -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo-group" id="logoBtn" title="Gå til Hjem">
+        <span class="logo-icon">🛒</span>
+        <div class="logo-text-wrap">
+          <span class="logo-text">MUMS<span class="logo-sub">App</span></span>
+          <span class="logo-tagline">Madplan & Tilbud</span>
+        </div>
+      </div>
+
+      <!-- DESKTOP TOP NAV -->
+      <nav class="desktop-nav" aria-label="Hovednavigation">
+        <button class="nav-tab-btn active" data-tab="home">🏠 Hjem</button>
+        <button class="nav-tab-btn" data-tab="recipes">🍲 Opskrifter</button>
+        <button class="nav-tab-btn" data-tab="offers">🏷️ Tilbud</button>
+        <button class="nav-tab-btn" data-tab="shopping">
+          🛒 Indkøbsliste
+          <span id="desktopCartBadge" class="nav-counter-badge hidden">0</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="profile">👤 Profil</button>
+      </nav>
+
+      <!-- HEADER ACTIONS -->
+      <div class="header-right">
+        <button id="locationBtn" class="btn-location" title="Find nærmeste butikker">
+          <span class="loc-icon">📍</span>
+          <span id="locationBtnText">Find butik</span>
+        </button>
+
+        <button id="globalShoppingListBtn" class="btn-cart-nav" title="Gå til indkøbsliste" data-tab-target="shopping">
+          🛒 <span id="cartCountBadge" class="cart-badge">0</span>
+        </button>
+
+        <button id="authBtn" class="btn-auth" title="Log ind eller se profil">
+          <span id="authBtnIcon">👤</span>
+          <span id="authBtnText">Log ind</span>
+        </button>
+
+        <button id="apiStatusBtn" class="btn-api-status" title="Vis tilknyttede API'er">
+          <span class="api-live-dot"></span>
+          <span>4 API'er</span>
+        </button>
+
+        <div class="api-counter" style="display:none;">
+          <span id="callsLeft">25</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN APP CONTAINER -->
+  <main class="main" id="mainContainer">
+
+    <!-- PWA INSTALL PROMPT BANNER -->
+    <div id="pwaInstallBanner" class="pwa-install-banner hidden">
+      <div class="pwa-install-left">
+        <img src="icons/icon.svg" alt="MUMS App" class="pwa-install-icon" />
+        <div class="pwa-install-text-wrap">
+          <div class="pwa-install-badge">📱 Føj til hjemmeskærm</div>
+          <strong class="pwa-install-title">Installer MUMS som App</strong>
+          <p class="pwa-install-desc">Få hurtig adgang direkte fra din telefon, fuld skærm og lynhurtig indlæsning.</p>
+        </div>
+      </div>
+      <div class="pwa-install-actions">
+        <button id="btnPwaInstall" class="btn btn-primary btn-sm">📲 Installer app</button>
+        <button id="btnPwaDismiss" class="btn-dismiss-pwa" title="Luk banner" aria-label="Luk">✕</button>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- 1. FANEN: HJEM (DASHBOARD & OVERBLIK)                                     -->
+    <!-- ========================================================================= -->
+    <section id="tabViewHome" class="tab-view active">
+      <!-- Velkomst & Hurtigt Overblik -->
+      <div class="card home-welcome-card">
+        <div class="home-welcome-header">
+          <div>
+            <div class="home-greeting-pill">🌟 Velkommen til MUMS</div>
+            <h1 class="home-hero-title">Gør madplanen <span class="highlight">nem, sund</span> & <span class="highlight2">billig</span></h1>
+            <p class="home-hero-sub">Sammenlign priser hos Netto, REMA 1000, Lidl, 365discount, Føtex og Bilka på ét sekund.</p>
+          </div>
+          <div class="home-hero-badge">
+            <span class="hero-badge-number">33+</span>
+            <span class="hero-badge-txt">Opskrifter</span>
+          </div>
+        </div>
+
+        <!-- Hurtige status-chips -->
+        <div class="home-stats-grid">
+          <div class="home-stat-chip" id="chipServings" data-tab-target="recipes">
+            <span class="stat-chip-icon">👥</span>
+            <div>
+              <div class="stat-chip-lbl">Portioner</div>
+              <div class="stat-chip-val" id="homeChipServingsVal">4 personer</div>
+            </div>
+          </div>
+          <div class="home-stat-chip" id="chipBudget" data-tab-target="recipes">
+            <span class="stat-chip-icon">💰</span>
+            <div>
+              <div class="stat-chip-lbl">Måltidsbudget</div>
+              <div class="stat-chip-val" id="homeChipBudgetVal">150 kr</div>
+            </div>
+          </div>
+          <div class="home-stat-chip" id="chipNutrition" data-tab-target="recipes">
+            <span class="stat-chip-icon">🎯</span>
+            <div>
+              <div class="stat-chip-lbl">Ernæringsmål</div>
+              <div class="stat-chip-val" id="homeChipNutritionVal">Standard mål</div>
+            </div>
+          </div>
+          <div class="home-stat-chip" id="chipNearestStore" data-action="locate">
+            <span class="stat-chip-icon">📍</span>
+            <div>
+              <div class="stat-chip-lbl">Nærmeste butik</div>
+              <div class="stat-chip-val" id="homeChipNearestStoreVal">Tryk for afstand</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dagens Udvalgte Ret -->
+      <div class="card home-featured-card">
+        <div class="featured-card-top">
+          <div class="section-title-wrap">
+            <span class="section-badge">✨ Dagens anbefalede ret</span>
+            <h2 class="section-title">Sund & Billig Hverdagsret</h2>
+          </div>
+          <button class="btn-link" data-tab-target="recipes">Se alle 33+ opskrifter ➔</button>
+        </div>
+
+        <div class="featured-dish-box" id="homeFeaturedDishBox">
+          <div class="featured-dish-img">🍝</div>
+          <div class="featured-dish-content">
+            <div class="featured-dish-tags">
+              <span class="recipe-source-badge arla">🥛 Arla Opskrift</span>
+              <span class="featured-price-pill" id="homeFeaturedPricePill">Ca. 28,50 kr / pers</span>
+            </div>
+            <h3 class="featured-dish-title" id="homeFeaturedTitle">Cremet Pasta med Kylling & Bacon</h3>
+            <p class="featured-dish-desc" id="homeFeaturedDesc">Lækker og hurtig pastaret med sprød bacon, saftig kylling og cremet flødesauce. Perfekt til familien på hverdage.</p>
+            <div class="featured-dish-footer">
+              <button class="btn btn-primary" id="btnCookFeatured" data-recipe-id="arla-pasta-bacon">
+                👨‍🍳 Lav denne ret & se indkøb
+              </button>
+              <button class="btn btn-secondary" id="btnFeaturedToCart" data-recipe-id="arla-pasta-bacon">
+                🛒 Føj til indkøbsliste
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ugens Hotteste Tilbud (Karrusel / Highlight) -->
+      <div class="card home-offers-highlight">
+        <div class="featured-card-top">
+          <div class="section-title-wrap">
+            <span class="section-badge">🔥 Ugens vildeste besparelser</span>
+            <h2 class="section-title">Populære Tilbud Lige Nu</h2>
+          </div>
+          <button class="btn-link" data-tab-target="offers">Gennemse alle 65+ tilbud ➔</button>
+        </div>
+
+        <div class="home-top-offers-grid" id="homeTopOffersGrid">
+          <!-- Dynamically populated with top 4 offers by savings -->
+        </div>
+      </div>
+
+
+      <!-- Nærmeste Butikker Hurtig-Oversigt -->
+      <div class="card home-stores-card">
+        <div class="featured-card-top">
+          <div class="section-title-wrap">
+            <span class="section-badge">📍 Butikker i nærheden</span>
+            <h2 class="section-title">Find Supermarkeder</h2>
+          </div>
+          <button class="btn-link" id="homeLocateBtn">Opdater GPS 📍</button>
+        </div>
+        <div class="home-stores-grid" id="homeStoresGrid">
+          <!-- Dynamically populated with 6 stores -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- 2. FANEN: OPSKRIFTER (CATALOG, PORTIONER, BUDGET & MATCH)                 -->
+    <!-- ========================================================================= -->
+    <section id="tabViewRecipes" class="tab-view hidden">
+      <!-- PORTIONS- & BUDGET KONTROL -->
+      <div class="card servings-budget-bar">
+        <div class="servings-budget-inner">
+          <div class="servings-group">
+            <span class="ctrl-label">👥 Antal personer:</span>
+            <div class="servings-pills">
+              <button class="servings-btn" data-servings="1">1 pers.</button>
+              <button class="servings-btn" data-servings="2">2 pers.</button>
+              <button class="servings-btn active" data-servings="4">4 pers.</button>
+              <button class="servings-btn" data-servings="6">6 pers.</button>
+              <button class="servings-btn" data-servings="8">8 pers.</button>
+            </div>
+            <span class="servings-hint">Skalerer automatisk ingredienser & pakker</span>
+          </div>
+
+          <div class="budget-group">
+            <span class="ctrl-label">💰 Maks. Budget pr. måltid:</span>
+            <div class="budget-input-wrap">
+              <input type="number" id="budgetInput" placeholder="Fx 150" min="10" step="5" class="budget-input" value="150" />
+              <span class="budget-curr">kr</span>
+            </div>
+            <span id="budgetStatusBadge" class="budget-badge-pill within">Inden for budget</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ERNÆRINGSPROFIL & PRÆFERENCER -->
+      <div class="card nutrition-section">
+        <div class="nutrition-header">
+          <div>
+            <h2 class="section-title" style="margin-bottom:4px;">🎯 Dit Ernæringsmål</h2>
+            <p class="section-subtitle">Vælg et hurtigt mål, skift mellem dine egne profiler, eller klik <strong>Indstil selv</strong></p>
+            <div class="profile-manager-row">
+              <div class="profile-select-wrap">
+                <label for="userProfileSelect" class="profile-label">Aktiv profil:</label>
+                <select id="userProfileSelect" class="profile-dropdown">
+                  <option value="none">Standard mål</option>
+                </select>
+              </div>
+              <div class="profile-actions-wrap">
+                <button id="btnNewProfile" class="btn-profile-act" title="Opret ny profil">➕ Ny profil</button>
+                <button id="btnEditProfile" class="btn-profile-act hidden" title="Rediger profil">✏️ Rediger</button>
+                <button id="btnDeleteProfile" class="btn-profile-act btn-profile-danger hidden" title="Slet profil">🗑️ Slet</button>
+              </div>
+            </div>
+          </div>
+          <div class="quick-preset-btns">
+            <button class="preset-pill-btn" data-preset="bulk">💪 Bulk</button>
+            <button class="preset-pill-btn" data-preset="cutting">🔥 Cutting</button>
+            <button class="preset-pill-btn" data-preset="maintain">⚖️ Vedligehold</button>
+            <button id="toggleCustomPrefsBtn" class="preset-pill-btn preset-custom">⚙️ Indstil selv</button>
+            <button id="clearProfile" class="preset-pill-btn preset-clear">× Nulstil</button>
+          </div>
+        </div>
+
+        <!-- TOGGLABLE NUMERIC INPUTS CONTAINER -->
+        <div id="customNutritionWrap" class="custom-nutrition-wrap hidden">
+          <div class="custom-nutrition-banner">
+            <span>Skriv dine specifikke grænser per portion og vælg enhed:</span>
+          </div>
+          <div class="pref-grid">
+            <div class="pref-box">
+              <label class="pref-label">
+                <span>🥩 Protein</span>
+                <span class="pref-sub">Min. ønsket</span>
+              </label>
+              <div class="pref-input-group">
+                <input type="number" id="prefProteinVal" class="pref-num-input" placeholder="fx 40" min="0" step="1" />
+                <select id="prefProteinUnit" class="pref-unit-select">
+                  <option value="g">gram (g)</option>
+                  <option value="mg">mg</option>
+                  <option value="kcal">kcal</option>
+                  <option value="pct">% energi</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="pref-box">
+              <label class="pref-label">
+                <span>🥑 Fedt</span>
+                <span class="pref-sub">Max. ønsket</span>
+              </label>
+              <div class="pref-input-group">
+                <input type="number" id="prefFatVal" class="pref-num-input" placeholder="fx 15" min="0" step="1" />
+                <select id="prefFatUnit" class="pref-unit-select">
+                  <option value="g">gram (g)</option>
+                  <option value="mg">mg</option>
+                  <option value="kcal">kcal</option>
+                  <option value="pct">% energi</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="pref-box">
+              <label class="pref-label">
+                <span>⚡ Kalorier</span>
+                <span class="pref-sub">Mål per portion</span>
+              </label>
+              <div class="pref-input-group">
+                <input type="number" id="prefKcalVal" class="pref-num-input" placeholder="fx 550" min="0" step="10" />
+                <select id="prefKcalUnit" class="pref-unit-select">
+                  <option value="kcal">kcal</option>
+                  <option value="kJ">kJ</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="pref-box">
+              <label class="pref-label">
+                <span>🌾 Kulhydrater</span>
+                <span class="pref-sub">Mål per portion</span>
+              </label>
+              <div class="pref-input-group">
+                <input type="number" id="prefCarbsVal" class="pref-num-input" placeholder="fx 60" min="0" step="1" />
+                <select id="prefCarbsUnit" class="pref-unit-select">
+                  <option value="g">gram (g)</option>
+                  <option value="mg">mg</option>
+                  <option value="kcal">kcal</option>
+                  <option value="pct">% energi</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="profileSummary" class="profile-summary hidden">
+          <span id="profileSummaryText"></span>
+        </div>
+      </div>
+
+      <!-- OPSKRIFTSFILTER & ARLA / VALDEMARSRO HUB -->
+      <div class="card recipe-hub-card">
+        <div class="recipe-hub-top">
+          <div>
+            <h2 class="section-title" style="margin-bottom:4px;">🍲 Find Retter & Opskrifter</h2>
+            <p class="section-subtitle">Vælg kilde, søg direkte blandt 5.900+ verificerede retter fra Arla, Valdemarsro og MUMS, eller filtrér efter råvare</p>
+          </div>
+          <div class="recipe-source-pills" id="recipeSourcePills">
+            <button class="recipe-source-pill active" data-source="all">🌟 Alle opskrifter</button>
+            <button class="recipe-source-pill" data-source="Arla">🥛 Arla Opskrifter</button>
+            <button class="recipe-source-pill" data-source="Valdemarsro">🌿 Valdemarsro</button>
+          </div>
+        </div>
+
+        <!-- Råvare hurtig-filtre -->
+        <div class="recipe-cat-filter-row">
+          <button class="recipe-cat-btn active" data-cat="all">🌟 Alle typer</button>
+          <button class="recipe-cat-btn" data-cat="pasta">🍝 Pasta</button>
+          <button class="recipe-cat-btn" data-cat="kylling">🍗 Kylling</button>
+          <button class="recipe-cat-btn" data-cat="oksekød">🥩 Oksekød</button>
+          <button class="recipe-cat-btn" data-cat="vegetar">🥦 Vegetar</button>
+          <button class="recipe-cat-btn" data-cat="fisk">🐟 Fisk</button>
+          <button class="recipe-cat-btn" data-cat="suppe">🍲 Suppe</button>
+        </div>
+
+        <div class="recipe-quick-search-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+          <input type="text" id="recipeSearchInput" placeholder="🔎 Søg direkte blandt alle 5.900+ retter (fx carbonara, kylling i karry, lasagne, laks, suppe...)" class="recipe-search-input" style="flex: 1; min-width: 220px;" />
+          
+          <div class="recipe-focus-wrap" style="display: flex; align-items: center; gap: 8px;">
+            <label for="recipeFocusSelect" style="font-size: 13px; font-weight: 700; color: var(--text-secondary); white-space: nowrap;">🎯 Fokusér på:</label>
+            <select id="recipeFocusSelect" class="auth-input" style="padding: 8px 12px; font-size: 13px; border-radius: 8px; font-weight: 700; cursor: pointer; min-width: 190px; background: var(--bg-card); color: var(--text-primary); border: 1.5px solid var(--border-color);">
+              <option value="cheapest">💰 Billigste pris først</option>
+              <option value="match_pct">🎯 Bedste match</option>
+              <option value="low_carbs">🌾 Færrest kulhydrater</option>
+              <option value="high_protein">🥩 Mest protein</option>
+              <option value="low_kcal">⚡ Færrest kalorier (slank)</option>
+              <option value="fastest">⏱️ Hurtigste tilberedning</option>
+            </select>
+          </div>
+
+          <div class="recipe-search-info-bar">
+            <span id="recipeCountDisplay" class="recipe-count-pill">⚡ 5.900+ retter</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- INGREDIENS INPUT OG BUTIKSVALG (HURTIG SØGNING) -->
+      <div class="card input-section" style="margin-top: 14px;">
+        <div class="section-collapsible-title">
+          <span>🥕 Søg specifikt ud fra dine egne ingredienser</span>
+        </div>
+        <div class="quick-picks">
+          <p class="quick-label">Hurtige råvarer:</p>
+          <div class="quick-buttons">
+            <button class="quick-btn" data-recipe="pasta">🍝 Pasta</button>
+            <button class="quick-btn" data-recipe="chicken">🍗 Kylling</button>
+            <button class="quick-btn" data-recipe="drinks">🥤 Sodavand & Pant</button>
+            <button class="quick-btn" data-recipe="salad">🥗 Salat</button>
+            <button class="quick-btn" data-recipe="soup">🍲 Suppe</button>
+            <button class="quick-btn" data-recipe="fish">🐟 Fisk</button>
+            <button class="quick-btn" data-recipe="eggs">🥚 Æg</button>
+            <button class="quick-btn" data-recipe="beef">🥩 Oksekød</button>
+          </div>
+        </div>
+
+        <div class="ingredient-input-row">
+          <input type="text" id="ingredientInput" class="ingredient-input"
+            placeholder="Fx: kylling, flæskesteg, pasta, eller ingredienser du har..." autocomplete="off" />
+          <button id="addIngredientBtn" class="btn btn-primary">+ Tilføj råvare</button>
+        </div>
+        <div id="ingredientTags" class="ingredient-tags"></div>
+
+        <div class="store-filter">
+          <p class="filter-label">Aktive butikker i sammenligningen:</p>
+          <div class="store-checkboxes" id="storeCheckboxes">
+            <label class="store-check"><input type="checkbox" name="store" value="bilka" checked /><span class="store-dot bilka-dot"></span>Bilka</label>
+            <label class="store-check"><input type="checkbox" name="store" value="foetex" checked /><span class="store-dot foetex-dot"></span>Føtex</label>
+            <label class="store-check"><input type="checkbox" name="store" value="netto" checked /><span class="store-dot netto-dot"></span>Netto</label>
+            <label class="store-check"><input type="checkbox" name="store" value="rema" checked /><span class="store-dot rema-dot"></span>REMA 1000</label>
+            <label class="store-check"><input type="checkbox" name="store" value="lidl" checked /><span class="store-dot lidl-dot"></span>Lidl</label>
+            <label class="store-check"><input type="checkbox" name="store" value="coop365" checked /><span class="store-dot coop365-dot"></span>365discount</label>
+          </div>
+        </div>
+
+        <button id="searchBtn" class="btn btn-search">
+          <span class="btn-icon">🔍</span>
+          Find retter & sammenlign priser
+        </button>
+      </div>
+
+      <!-- LOADING INDICATOR -->
+      <div id="loadingSection" class="loading-section hidden">
+        <div class="spinner"></div>
+        <p id="loadingText" class="loading-text">Søger priser & ernæring...</p>
+      </div>
+
+      <!-- OPSKRIFTSKORT GRID -->
+      <div id="resultsSection">
+        <div id="recipeCards" class="recipe-cards-grid">
+          <!-- Filled dynamically by renderRecipeCards() -->
+        </div>
+
+        <!-- PRISSAMMENLIGNINGS TABEL -->
+        <div class="card price-comparison-card" style="margin-top:20px;">
+          <div class="results-header">
+            <div>
+              <h2 class="section-title" style="margin-bottom:4px;">💰 Prissammenligning</h2>
+              <div class="pant-banner-badge">
+                <span>🏷️ <strong>Dansk Pant</strong> (Pant A: 1 kr · Pant B: 1,5 kr · Pant C: 3 kr) beregnes automatisk</span>
+              </div>
+            </div>
+            <div class="total-row">
+              <span>Bedste samlede pris:</span>
+              <span id="totalBestPrice" class="total-price">—</span>
+            </div>
+          </div>
+          <div id="comparisonTable" class="comparison-table-wrapper"></div>
+          <div id="winnerBanner" class="winner-banner hidden">
+            <div class="winner-icon">🏆</div>
+            <div>
+              <div class="winner-title">Billigste samlet indkøb</div>
+              <div id="winnerStore" class="winner-store"></div>
+            </div>
+            <div id="winnerPrice" class="winner-price"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-icon">🛒</div>
+        <p>Vælg dine ingredienser eller søg en ret foroven</p>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- 3. FANEN: TILBUD (AVISER, COUNTDOWN & UDLØB-HÅNDTERING)                    -->
+    <!-- ========================================================================= -->
+    <section id="tabViewOffers" class="tab-view hidden">
+      <!-- LIVE COUNTDOWN & AVIS STATUS BANNER -->
+      <div class="card flyer-countdown-banner">
+        <div class="countdown-banner-inner">
+          <div class="countdown-banner-left">
+            <div class="flyer-status-badge">
+              <span class="live-pulse-dot"></span>
+              <span id="activeFlyerBadgeText">Aktiv Tilbudsavis</span>
+            </div>
+            <h2 class="active-flyer-title" id="activeFlyerTitle">Bilka Avisen – Ugens Tilbud</h2>
+            <div class="flyer-dates-row">
+              <span>📅 Gyldig fra: <strong id="flyerStartDate">Man.</strong> til <strong id="flyerEndDate">Søn.</strong></span>
+            </div>
+          </div>
+
+          <div class="countdown-banner-right">
+            <div class="countdown-box">
+              <span class="countdown-label">⏳ Udløber om:</span>
+              <span class="countdown-clock" id="flyerCountdownClock">02d 14t 32m 10s</span>
+            </div>
+            <button id="btnSimulateExpire" class="btn-simulate-expire" title="Simulér avisudløb og aktivér næste avis">
+              ⏩ Simulér avisudløb & skift avis
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DAGLIG TILBUDS-CHECKER FRA ALLE SUPERMARKEDER -->
+      <div class="card daily-sync-bar" id="dailySyncBar">
+        <div class="daily-sync-content">
+          <div class="daily-sync-status-indicator">
+            <span class="daily-sync-pulsing-dot"></span>
+            <strong id="dailySyncTitle">Daglige Tilbudsaviser (Alle 6 supermarkeder)</strong>
+          </div>
+          <p class="daily-sync-details" id="dailySyncStatusText">
+            🟢 Tjekker automatisk hver dag · Sidst opdateret: I dag · 65+ aktive tilbud verificeret
+          </p>
+        </div>
+        <button id="btnDailyCheckNow" class="btn-daily-sync" title="Tjek tilbudsaviser for alle supermarkeder i dag">
+          🔄 Tjek tilbudsaviser nu
+        </button>
+      </div>
+
+      <!-- TILBUDSAVIS FILTER BAR -->
+      <div class="card offers-filter-card">
+        <div class="offers-filter-group">
+          <span class="offer-filter-label">🏬 Vælg tilbudsavis / butik:</span>
+          <div class="offer-pills" id="offerStorePills">
+            <button class="offer-pill active" data-store="all">🌟 Alle aviser</button>
+            <button class="offer-pill" data-store="bilka"><span class="store-dot bilka-dot"></span>Bilka</button>
+            <button class="offer-pill" data-store="foetex"><span class="store-dot foetex-dot"></span>Føtex</button>
+            <button class="offer-pill" data-store="netto"><span class="store-dot netto-dot"></span>Netto</button>
+            <button class="offer-pill" data-store="rema"><span class="store-dot rema-dot"></span>REMA 1000</button>
+            <button class="offer-pill" data-store="lidl"><span class="store-dot lidl-dot"></span>Lidl</button>
+            <button class="offer-pill" data-store="coop365"><span class="store-dot coop365-dot"></span>365discount</button>
+          </div>
+        </div>
+
+        <div class="offers-filter-group" style="margin-top: 14px;">
+          <span class="offer-filter-label">🛍️ Vælg varekategori:</span>
+          <div class="offer-pills" id="offerCategoryPills">
+            <button class="offer-pill active" data-cat="all">🌟 Alle varer</button>
+            <button class="offer-pill" data-cat="drikke">🥤 Sodavand & Drikke</button>
+            <button class="offer-pill" data-cat="kod">🥩 Kød & Pålæg</button>
+            <button class="offer-pill" data-cat="mejeri">🧀 Mejeri & Ost</button>
+            <button class="offer-pill" data-cat="frugt">🥦 Frugt & Grønt</button>
+            <button class="offer-pill" data-cat="kolonial">🍞 Brød & Kolonial</button>
+            <button class="offer-pill" data-cat="frost">❄️ Frost & Is</button>
+            <button class="offer-pill" data-cat="slik">🍬 Slik & Snacks</button>
+          </div>
+        </div>
+
+        <div class="offers-search-row" style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+          <input type="text" id="offerSearchInput" class="recipe-search-input" style="flex: 1; min-width: 200px;" placeholder="🔎 Søg blandt 65+ tilbud (fx cola, oksekød, smør, pasta, kaffe...)" />
+          
+          <div class="offers-sort-wrap" style="display: flex; align-items: center; gap: 8px;">
+            <label for="offerSortSelect" style="font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Sorter:</label>
+            <select id="offerSortSelect" class="auth-input" style="padding: 8px 12px; font-size: 13px; border-radius: 8px; font-weight: 600; cursor: pointer; min-width: 170px;">
+              <option value="default">🌟 Anbefalet</option>
+              <option value="discount_pct">🔥 Højeste rabat (%)</option>
+              <option value="savings_kr">💰 Største besparelse (kr)</option>
+              <option value="price_asc">🏷️ Laveste pris (kr)</option>
+            </select>
+          </div>
+
+          <div class="offers-count-indicator">
+            <span id="offersCountBadge" class="offers-count-badge">65 tilbud</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TILBUDS GRID (Fyldes af JS) -->
+      <div id="offersStrip" class="offers-grid-container">
+        <!-- Rendered by renderOffers() -->
+      </div>
+
+      <!-- VIS FLERE / PAGINATION KNAP -->
+      <div class="offers-pagination-wrap" id="offersPaginationWrap">
+        <button id="btnLoadMoreOffers" class="btn btn-secondary btn-load-more">
+          Vis flere tilbud ▾
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- 4. FANEN: INDKØBSLISTE (DEDIKERET SIDE MED CHECKBOXE & BUTIKSRUTE)         -->
+    <!-- ========================================================================= -->
+    <section id="tabViewShopping" class="tab-view hidden">
+      <div class="card shopping-page-card">
+        <div class="shopping-page-header">
+          <div>
+            <h1 class="page-main-title">🛒 Min Indkøbsliste</h1>
+            <p class="page-subtitle" id="pageShoppingSubTitle">Beregnet ud fra dine valgte retter og konkrete pakningsstørrelser</p>
+          </div>
+          <div class="shopping-header-actions">
+            <button id="pageBtnClearShoppingList" class="btn-sm btn-secondary">🗑️ Ryd liste</button>
+            <button id="pageBtnCopyShoppingList" class="btn-sm btn-secondary">📋 Kopiér</button>
+          </div>
+        </div>
+
+        <!-- Budget & Pant status-bjælke -->
+        <div class="shopping-overview-bar">
+          <div class="overview-item">
+            <span class="ov-label">Samlet pris</span>
+            <span class="ov-val" id="pageShoppingTotalSum">0,00 kr</span>
+          </div>
+          <div class="overview-item">
+            <span class="ov-label">Heraf Dansk Pant</span>
+            <span class="ov-val" id="pageShoppingPantSum">0,00 kr</span>
+          </div>
+          <div class="overview-item">
+            <span class="ov-label">Budget status</span>
+            <span class="ov-val" id="pageShoppingBudgetStatus">Inden for budget</span>
+          </div>
+        </div>
+
+        <!-- Hurtig tilføj råvare -->
+        <div class="shopping-add-row">
+          <input type="text" id="pageManualItemInput" class="ingredient-input" placeholder="Tilføj en ekstra vare til listen (fx mælk, gær, rugbrød)..." />
+          <button id="pageBtnAddManualItem" class="btn btn-primary">+ Tilføj</button>
+        </div>
+
+        <!-- LISTE OVER VARER (Grupperet efter butik) -->
+        <div id="pageShoppingListContainer" class="shopping-page-items">
+          <!-- Filled by renderShoppingListPage() -->
+        </div>
+
+        <!-- Empty state for indkøbslisten -->
+        <div id="shoppingEmptyNotice" class="empty-state hidden">
+          <div class="empty-icon">🛒</div>
+          <h3>Din indkøbsliste er tom</h3>
+          <p>Find en lækker ret under Opskrifter eller tilføj tilbud for at sammensætte din liste.</p>
+          <button class="btn btn-primary" data-tab-target="recipes" style="margin-top:10px;">
+            Gå til Opskrifter ➔
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- 5. FANEN: PROFIL (BRUGERKONTO, GEMTE DATA & ERNÆRINGSPROFILER)              -->
+    <!-- ========================================================================= -->
+    <section id="tabViewProfile" class="tab-view hidden">
+      <!-- BRUGER STATUS CARD -->
+      <div class="card profile-user-card">
+        <div class="profile-card-top">
+          <div class="profile-avatar-large">👤</div>
+          <div class="profile-user-info">
+            <h2 id="profileNameDisplay" class="profile-name-text">Gæstebruger</h2>
+            <p id="profileEmailDisplay" class="profile-email-text">Ikke logget ind</p>
+            <div id="profileVerifyBadgeDisplay" class="email-badge-display unverified">
+              <span>⚠️ Ikke bekræftet</span>
+            </div>
+          </div>
+          <div class="profile-auth-action-wrap">
+            <button id="profileAuthBtn" class="btn btn-primary">Log ind / Opret</button>
+          </div>
+        </div>
+
+        <!-- Email verifikation banner -->
+        <div id="profileEmailVerifyBox" class="profile-verify-box hidden">
+          <strong>Bekræft din email-adresse:</strong>
+          <p style="font-size:0.85rem; margin:4px 0 8px;">Indtast den 6-cifrede bekræftelseskode for at låse op for sikker datalagring:</p>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="profileVerifyCodeInput" placeholder="Fx 123456" class="verify-code-input" />
+            <button id="btnProfileVerifySubmit" class="btn btn-primary btn-sm">Bekræft</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MINE STANDARD INDSTILLINGER -->
+      <div class="card profile-settings-card">
+        <h3 class="section-title">⚙️ Mine Standarder</h3>
+        <p class="section-subtitle">Dine faste præferencer synkroniseres automatisk med din konto</p>
+
+        <div class="profile-settings-grid">
+          <div class="setting-item">
+            <label class="setting-label" for="profileDefaultServings">Standard antal personer:</label>
+            <select id="profileDefaultServings" class="profile-dropdown">
+              <option value="1">1 person</option>
+              <option value="2">2 personer</option>
+              <option value="4" selected>4 personer (familie)</option>
+              <option value="6">6 personer</option>
+              <option value="8">8 personer</option>
+            </select>
+          </div>
+
+          <div class="setting-item">
+            <label class="setting-label" for="profileDefaultBudget">Maksimalt portionsbudget (kr):</label>
+            <input type="number" id="profileDefaultBudget" class="budget-input" value="150" min="20" step="10" />
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <label class="setting-label">Mine foretrukne supermarkeder:</label>
+          <div class="store-checkboxes" id="profileStoreCheckboxes" style="margin-top:6px;">
+            <label class="store-check"><input type="checkbox" data-profile-store="bilka" checked /><span class="store-dot bilka-dot"></span>Bilka</label>
+            <label class="store-check"><input type="checkbox" data-profile-store="foetex" checked /><span class="store-dot foetex-dot"></span>Føtex</label>
+            <label class="store-check"><input type="checkbox" data-profile-store="netto" checked /><span class="store-dot netto-dot"></span>Netto</label>
+            <label class="store-check"><input type="checkbox" data-profile-store="rema" checked /><span class="store-dot rema-dot"></span>REMA 1000</label>
+            <label class="store-check"><input type="checkbox" data-profile-store="lidl" checked /><span class="store-dot lidl-dot"></span>Lidl</label>
+            <label class="store-check"><input type="checkbox" data-profile-store="coop365" checked /><span class="store-dot coop365-dot"></span>365discount</label>
+          </div>
+        </div>
+
+        <button id="btnSaveProfileSettings" class="btn btn-primary" style="margin-top:16px;">
+          💾 Gem indstillinger på konto
+        </button>
+      </div>
+
+      <!-- MINE ALLERGIER & KOSTHENSYN -->
+      <div class="card profile-allergy-card">
+        <h3 class="section-title">🌾 Mine Allergier & Kosthensyn</h3>
+        <p class="section-subtitle">Vælg dine allergier, så MUMS automatisk kan markere opskrifter og beskytte dig mod uønskede ingredienser.</p>
+        
+        <div class="allergy-checkbox-grid" id="profileAllergyGrid" style="margin-top:12px;">
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="gluten" /> 🌾 Glutenfri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="laktose" /> 🥛 Laktosefri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="noedder" /> 🥜 Nøddefri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="aeg" /> 🥚 Æggefri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="fisk" /> 🐟 Fisk- & skaldyrsfri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="soja" /> 🌱 Sojafri</label>
+          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="svinekoed" /> 🥩 Ingen svinekød</label>
+        </div>
+
+        <div class="profile-auto-filter-row" style="margin-top:14px; padding:10px 12px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div>
+            <strong style="font-size:0.88rem; display:block;">Skjul opskrifter med mine allergener automatisk</strong>
+            <p style="font-size:0.75rem; margin:2px 0 0 0;">Når slået til, filtreres opskrifter der indeholder dine allergener automatisk fra visningen.</p>
+          </div>
+          <label class="toggle-switch" style="flex-shrink:0;">
+            <input type="checkbox" id="profileAutoFilterAllergies" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <button id="btnSaveProfileAllergies" class="btn btn-primary" style="margin-top:14px;">
+          💾 Gem allergier & kosthensyn
+        </button>
+      </div>
+
+      <!-- APP-INDSTILLINGER & UDSEENDE -->
+      <div class="card app-settings-card">
+        <h3 class="section-title">⚙️ App-indstillinger & Udseende</h3>
+        <p class="section-subtitle">Tilpas MUMS-appens udseende, visningspræferencer og data</p>
+
+        <div class="app-setting-row">
+          <div class="app-setting-info">
+            <strong>Tema & Farvetilstand</strong>
+            <p>Vælg mellem lyst tema og øjenvenlig mørk tilstand (Dark Mode)</p>
+          </div>
+          <div class="theme-switch-wrap">
+            <button id="btnThemeLight" class="theme-choice-btn active" title="Lyst tema">☀️ Lyst</button>
+            <button id="btnThemeDark" class="theme-choice-btn" title="Mørkt tema">🌙 Mørkt</button>
+          </div>
+        </div>
+
+        <div class="app-setting-row">
+          <div class="app-setting-info">
+            <strong>Kompakt opskriftsvisning</strong>
+            <p>Vis opskrifter i et mere kompakt gitter, så du ser flere retter på én gang</p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleCompactView" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="app-setting-row">
+          <div class="app-setting-info">
+            <strong>Automatisk dagligt tilbudstjek</strong>
+            <p>Tjek automatisk for nye tilbudsaviser hver morgen når appen åbnes</p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggleDailyOfferCheck" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="app-setting-row" style="border-bottom:none;">
+          <div class="app-setting-info">
+            <strong>Nulstil cache & gemte data</strong>
+            <p>Rens lokal cache og genindlæs friske tilbud og opskrifter uden at slette din konto</p>
+          </div>
+          <button id="btnResetAppData" class="btn btn-secondary btn-sm" style="color:var(--danger); border-color:#fca5a5;">
+            🗑️ Nulstil cache
+          </button>
+        </div>
+      </div>
+
+      <!-- LIVE DATA & API INTEGRATIONER -->
+      <div class="card app-settings-card" id="apiSettingsCard">
+        <h3 class="section-title">🔌 Integrationer & Live Forbindelser</h3>
+        <p class="section-subtitle">Styr direkte dataforbindelser til e-mail, supermarkeder og ernæringsdatabaser</p>
+
+        <!-- EmailJS integration -->
+        <div class="api-box-container">
+          <div class="api-box-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:1.4rem;">📧</span>
+              <div>
+                <strong>EmailJS E-mail Bekræftelse</strong>
+                <div id="emailjsBadge" class="api-live-pill active">⚡ Direkte Hurtig-PIN aktiv</div>
+              </div>
+            </div>
+          </div>
+          <p class="api-box-desc">
+            Hvis du ønsker at modtage rigtige bekræftelseskoder direkte i din personlige e-mail indbakke, kan du indsætte dine gratis nøgler fra <a href="https://emailjs.com" target="_blank" rel="noopener" style="color:var(--primary); font-weight:700;">emailjs.com</a> (200 gratis mails/md). Hvis felterne er tomme, benyttes øjeblikkelig sikker PIN-bekræftelse.
+          </p>
+          <div class="api-inputs-row">
+            <div class="api-input-group">
+              <label>Public Key:</label>
+              <input type="text" id="cfgEmailJsPublicKey" placeholder="fx. user_xxxxxxxx" class="api-input" />
+            </div>
+            <div class="api-input-group">
+              <label>Service ID:</label>
+              <input type="text" id="cfgEmailJsServiceId" placeholder="fx. service_gmail" class="api-input" />
+            </div>
+            <div class="api-input-group">
+              <label>Template ID:</label>
+              <input type="text" id="cfgEmailJsTemplateId" placeholder="fx. template_welcome" class="api-input" />
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <button id="btnSaveEmailJsConfig" class="btn btn-primary btn-sm">💾 Gem e-mail nøgler</button>
+            <button id="btnTestEmailJsConfig" class="btn btn-secondary btn-sm">🧪 Test e-mail</button>
+          </div>
+        </div>
+
+        <!-- Live REMA 1000 status -->
+        <div class="api-status-row">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:1.3rem;">🛍️</span>
+            <div>
+              <strong>REMA 1000 Live Varekatalog & Tilbud</strong>
+              <p style="font-size:0.8rem; color:var(--gray-500); margin:0;">Henter live varer og kampagnetilbud direkte fra cphapp.rema1000.dk</p>
+            </div>
+          </div>
+          <span class="api-live-tag">🟢 LIVE FORBUNDET</span>
+        </div>
+
+        <!-- Live Open Food Facts status -->
+        <div class="api-status-row">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:1.3rem;">🥗</span>
+            <div>
+              <strong>Open Food Facts Global Næringsdatabase</strong>
+              <p style="font-size:0.8rem; color:var(--gray-500); margin:0;">Live beregning af kalorier, proteiner, fedt og kulhydrater for råvarer</p>
+            </div>
+          </div>
+          <span class="api-live-tag">🟢 LIVE FORBUNDET</span>
+        </div>
+
+        <!-- Salling Group API -->
+        <div class="api-box-container" style="margin-top:14px;">
+          <div class="api-box-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:1.4rem;">🏷️</span>
+              <div>
+                <strong>Salling Group API (Valgfri)</strong>
+                <div class="api-live-pill">Netto · Føtex · Bilka</div>
+              </div>
+            </div>
+          </div>
+          <p class="api-box-desc">
+            Indtast din officielle Salling Developer API Key (Bearer token) for direkte adgang til live Salling Group varedatabaser.
+          </p>
+          <div class="api-input-group" style="margin-top:8px;">
+            <label>Salling API Key (Bearer):</label>
+            <input type="text" id="cfgSallingApiKey" placeholder="Indsæt Salling API-nøgle..." class="api-input" />
+          </div>
+          <div style="margin-top:10px;">
+            <button id="btnSaveSallingKey" class="btn btn-secondary btn-sm">💾 Gem Salling nøgle</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MINE ERNÆRINGSPROFILER -->
+      <div class="card profile-nutrition-manager">
+        <div class="featured-card-top">
+          <div>
+            <h3 class="section-title" style="margin-bottom:2px;">🎯 Mine Ernæringsprofiler</h3>
+            <p class="section-subtitle">Opret og tilpas dine egne personlige mål for kalorier, protein, fedt og kulhydrater</p>
+          </div>
+          <button id="btnProfileCreateNewNutr" class="btn btn-primary btn-sm">➕ Opret profil</button>
+        </div>
+
+        <div id="profileUserNutrList" class="profile-nutr-list">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- APP INSTALLATION & PWA STATUS -->
+      <div class="card profile-pwa-card">
+        <div class="pwa-profile-header">
+          <div class="pwa-profile-icon">📲</div>
+          <div>
+            <h3 class="section-title" style="margin-bottom:2px;">Installer MUMS på din enhed</h3>
+            <p class="section-subtitle">Brug MUMS som en rigtig app på din iPhone, Android eller computer med fuld skærm og hurtig start.</p>
+          </div>
+        </div>
+        <div class="pwa-profile-body" style="margin-top:12px;">
+          <button id="btnProfileInstallApp" class="btn btn-primary" style="width:100%; padding:12px; font-weight:800;">
+            📲 Installer MUMS App
+          </button>
+          <button id="btnProfileCheckUpdate" class="btn btn-secondary" style="width:100%; padding:10px; margin-top:8px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+            🔄 Tjek for opdateringer
+          </button>
+          <p id="profileUpdateStatusText" style="font-size:0.8rem; color:var(--gray-600); text-align:center; margin-top:6px;" class="hidden"></p>
+          <div class="pwa-ios-instructions hidden" id="pwaIosInstructions" style="background:#f0fdf4; border:1px solid #86efac; border-radius:var(--radius-sm); padding:12px 14px; margin-top:10px;">
+            <strong style="color:#166534;">📱 Sådan installeres på iPhone / iPad:</strong>
+            <ol style="margin:6px 0 0 18px; font-size:0.85rem; color:#14532d; line-height:1.6;">
+              <li>Tryk på <strong>Del-ikonet</strong> (firkant med pil opad) i Safari.</li>
+              <li>Rul ned på listen og tryk på <strong>Føj til hjemmeskærm</strong> (+).</li>
+              <li>Tryk på <strong>Tilføj</strong> øverst til højre. MUMS ligger nu som en app på din telefon!</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MOBILE BOTTOM NAVIGATION (5 APP TABS)                                     -->
+  <!-- ========================================================================= -->
+  <nav class="bottom-nav" aria-label="Mobil navigation">
+    <button class="nav-tab-btn active" data-tab="home">
+      <span class="nav-tab-icon">🏠</span>
+      <span class="nav-tab-label">Hjem</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="recipes">
+      <span class="nav-tab-icon">🍲</span>
+      <span class="nav-tab-label">Opskrifter</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="offers">
+      <span class="nav-tab-icon">🏷️</span>
+      <span class="nav-tab-label">Tilbud</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="shopping">
+      <span class="nav-tab-icon">🛒</span>
+      <span class="nav-tab-label">Indkøb</span>
+      <span id="navCartBadge" class="nav-badge hidden">0</span>
+    </button>
+    <button class="nav-tab-btn" data-tab="profile">
+      <span class="nav-tab-icon">⚙️</span>
+      <span class="nav-tab-label">Indstillinger</span>
+    </button>
+  </nav>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- MULTI-API STATUS MODAL -->
+  <div id="apiModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <button id="closeApiModal" class="modal-close-btn" title="Luk">&times;</button>
+      <div class="modal-store-header">
+        <div class="modal-store-logo tag-bilka">⚡</div>
+        <div>
+          <div class="modal-store-title">Multi-API Forbindelse</div>
+          <div class="modal-store-sub">Sammenligner data på tværs af supermarkedernes datakilder</div>
+        </div>
+      </div>
+      <div class="api-modal-list">
+        <div class="api-modal-card">
+          <div class="api-modal-card-top">
+            <span class="api-status-dot online">🟢</span>
+            <strong>Salling Group API</strong>
+            <span class="api-source-tag">Bilka · Føtex · Netto</span>
+          </div>
+          <p class="api-modal-card-desc">Henter live produkter, priser og ugentlige tilbudsaviser for alle Salling Groups supermarkeder.</p>
+        </div>
+        <div class="api-modal-card">
+          <div class="api-modal-card-top">
+            <span class="api-status-dot online">🟢</span>
+            <strong>REMA 1000 & Discount Feed</strong>
+            <span class="api-source-tag">REMA 1000 · Lidl · 365discount</span>
+          </div>
+          <p class="api-modal-card-desc">Offentlige varekataloger og tilbud for Danmarks førende discountkæder.</p>
+        </div>
+        <div class="api-modal-card">
+          <div class="api-modal-card-top">
+            <span class="api-status-dot online">🟢</span>
+            <strong>Open Food Facts API</strong>
+            <span class="api-source-tag">Live Ernæringsdata</span>
+          </div>
+          <p class="api-modal-card-desc">Ernæringsindhold (protein, kalorier, fedt og kulhydrater) for madvarer.</p>
+        </div>
+        <div class="api-modal-card">
+          <div class="api-modal-card-top">
+            <span class="api-status-dot online">🟢</span>
+            <strong>Dansk Retursystem Pant API</strong>
+            <span class="api-source-tag">Pant A · Pant B · Pant C</span>
+          </div>
+          <p class="api-modal-card-desc">Automatisk beregning af lovpligtig dansk pant for sodavand og dåser.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUTIK & PRODUKT MODAL -->
+  <div id="storeModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <button id="closeStoreModal" class="modal-close-btn" title="Luk">&times;</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <!-- AUTHENTICATION MODAL -->
+  <div id="authModal" class="modal-backdrop hidden">
+    <div class="modal-card auth-modal-card">
+      <button id="closeAuthModal" class="modal-close-btn" title="Luk">&times;</button>
+      
+      <!-- LOGGED OUT VIEW -->
+      <div id="authLoggedOutView">
+        <div class="auth-tabs">
+          <button id="tabLogin" class="auth-tab-btn active">Log ind</button>
+          <button id="tabRegister" class="auth-tab-btn">Opret konto</button>
+        </div>
+
+        <form id="authForm" class="auth-form" onsubmit="return false;">
+          <div id="authNameGroup" class="form-group hidden">
+            <label for="authName">Navn:</label>
+            <input type="text" id="authName" placeholder="Dit navn" class="auth-input" />
+          </div>
+
+          <div class="form-group">
+            <label for="authEmail">Email-adresse:</label>
+            <input type="email" id="authEmail" required placeholder="f.eks. bruger@mail.dk" class="auth-input" />
+          </div>
+
+          <div class="form-group">
+            <label for="authPassword">Adgangskode (min. 6 tegn):</label>
+            <input type="password" id="authPassword" required placeholder="••••••••" minlength="6" class="auth-input" />
+          </div>
+
+          <div id="authAllergiesGroup" class="form-group hidden">
+            <label class="setting-label">Har du allergier eller kosthensyn? (valgfrit):</label>
+            <p style="font-size:0.75rem; color:var(--gray-500); margin:-2px 0 6px 0;">MUMS advarer og tilpasser opskrifterne efter dine valg.</p>
+            <div class="allergy-checkbox-grid">
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="gluten" /> 🌾 Glutenfri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="laktose" /> 🥛 Laktosefri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="noedder" /> 🥜 Nøddefri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="aeg" /> 🥚 Æggefri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="fisk" /> 🐟 Fisk- & skaldyrsfri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="soja" /> 🌱 Sojafri</label>
+              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="svinekoed" /> 🥩 Ingen svinekød</label>
+            </div>
+          </div>
+
+          <button type="submit" id="authSubmitBtn" class="btn-primary auth-submit-btn">Log ind</button>
+          <p id="authErrorMsg" class="auth-error-msg hidden"></p>
+        </form>
+      </div>
+
+      <!-- LOGGED IN VIEW -->
+      <div id="authLoggedInView" class="hidden">
+        <div class="auth-profile-card">
+          <div class="auth-user-avatar">👤</div>
+          <h3 id="loggedInUserName">Bruger</h3>
+          <p id="loggedInUserEmail" class="auth-user-email">email@mail.dk</p>
+          
+          <div id="emailVerifyBanner" class="email-verify-banner">
+            <span class="verify-icon">⚠️</span>
+            <div>
+              <strong>Email ikke bekræftet</strong>
+              <p style="font-size:0.8rem; margin:2px 0 6px 0;" id="verifyBannerSubtext">Vi har sendt en 6-cifret kode til din email.</p>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="text" id="verificationCodeInput" placeholder="6-cifret kode" class="verify-code-input" maxlength="6" inputmode="numeric" />
+                <button id="btnConfirmVerify" class="btn-sm btn-verify">Bekræft</button>
+              </div>
+              <button id="btnResendCode" class="btn-link-sm" style="margin-top:6px; font-size:0.75rem;">↩ Send kode igen</button>
+              <span id="demoCodeHint" class="demo-code-hint hidden"></span>
+            </div>
+          </div>
+
+          <div id="emailVerifiedBadge" class="email-verified-badge hidden">
+            <span>✅ Email bekræftet & beskyttet</span>
+          </div>
+
+          <button id="btnLogout" class="btn-secondary auth-logout-btn">Log ud</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERNÆRINGSPROFIL MODAL -->
+  <div id="profileModal" class="modal-backdrop hidden">
+    <div class="modal-card profile-modal-card">
+      <button id="closeProfileModal" class="modal-close-btn" title="Luk">&times;</button>
+      <h3 id="profileModalTitle" class="modal-store-title">Opret Ernæringsprofil</h3>
+      <p class="modal-store-sub">Angiv dine specifikke ernæringsmål til opskrifterne</p>
+
+      <form id="profileForm" class="profile-modal-form" onsubmit="return false;">
+        <input type="hidden" id="profileEditId" value="" />
+        
+        <div class="form-group">
+          <label for="profNameInput">Profilnavn:</label>
+          <input type="text" id="profNameInput" required placeholder="Fx Min normale kost, Høj protein, Keto" class="auth-input" />
+        </div>
+
+        <div class="profile-inputs-grid">
+          <div class="form-group">
+            <label for="profKcal">Kalorier (kcal):</label>
+            <input type="number" id="profKcal" placeholder="Fx 2200" min="500" max="6000" class="auth-input" />
+          </div>
+          <div class="form-group">
+            <label for="profProtein">Protein (g):</label>
+            <input type="number" id="profProtein" placeholder="Fx 120" min="0" max="400" class="auth-input" />
+          </div>
+          <div class="form-group">
+            <label for="profFat">Fedt (g):</label>
+            <input type="number" id="profFat" placeholder="Fx 70" min="0" max="300" class="auth-input" />
+          </div>
+          <div class="form-group">
+            <label for="profCarbs">Kulhydrat (g):</label>
+            <input type="number" id="profCarbs" placeholder="Fx 250" min="0" max="600" class="auth-input" />
+          </div>
+          <div class="form-group">
+            <label for="profFiber">Fibre (g):</label>
+            <input type="number" id="profFiber" placeholder="Fx 30" min="0" max="100" class="auth-input" />
+          </div>
+        </div>
+
+        <div class="modal-footer-btns">
+          <button type="button" id="btnCancelProfile" class="btn-secondary">Annuller</button>
+          <button type="submit" id="btnSaveProfile" class="btn-primary">Gem profil</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- POPUP INDKØBSLISTE MODAL (for hurtig visning fra header) -->
+  <div id="shoppingListModal" class="modal-backdrop hidden">
+    <div class="modal-card shopping-modal-card">
+      <button id="closeShoppingModal" class="modal-close-btn" title="Luk">&times;</button>
+      <div class="shopping-modal-header">
+        <div>
+          <h3 class="modal-store-title">🛒 Samlet Indkøbsliste</h3>
+          <p id="shoppingModalServingsInfo" class="modal-store-sub">Beregnet ud fra dine valg og pakningsstørrelser</p>
+        </div>
+      </div>
+
+      <div id="shoppingListContainer" class="shopping-list-items-container">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div class="shopping-modal-summary">
+        <div class="shopping-summary-row">
+          <span>Samlet pris (inkl. pakker & pant):</span>
+          <span id="shoppingModalTotalSum" class="shopping-total-highlight">0.00 kr</span>
+        </div>
+        <div id="shoppingModalBudgetCompare" class="shopping-budget-box"></div>
+        <div class="modal-footer-btns" style="margin-top:12px;">
+          <button id="btnClearShoppingList" class="btn-secondary btn-sm">Ryd liste</button>
+          <button id="btnCloseShoppingList" class="btn-primary btn-sm">Færdig</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BY- & GEOLOKATION VÆLGER MODAL -->
+  <div id="locationModal" class="modal-backdrop hidden">
+    <div class="modal-card location-modal-card" style="max-width: 580px;">
+      <button id="closeLocationModal" class="modal-close-btn" title="Luk">&times;</button>
+      <div class="location-modal-header" style="margin-bottom: 16px;">
+        <h3 class="modal-store-title" style="display:flex; align-items:center; gap:8px;">
+          <span>📍</span> Vælg din By eller Postnummer
+        </h3>
+        <p class="modal-store-sub" style="margin-top: 4px; color: var(--text-secondary); font-size: 13.5px;">
+          Få præcise afstande (km) og adresser til de 6 supermarkeder uden behov for GPS-adgang.
+        </p>
+      </div>
+
+      <!-- GPS KNAP -->
+      <button id="btnUseBrowserGps" class="btn-location-gps" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; background: linear-gradient(135deg, #059669, #10b981); color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">
+        <span>🌐</span> Brug min browsers GPS automatisk
+      </button>
+
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+        <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+        <span style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Eller vælg din by nedenfor</span>
+        <div style="flex: 1; height: 1px; background: var(--border-color);"></div>
+      </div>
+
+      <!-- SØGNING EFTER BY / POSTNUMMER -->
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label for="cityPostalInput" style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Søg by eller postnummer:</label>
+        <input type="text" id="cityPostalInput" class="auth-input" placeholder="Fx 8000, Aarhus, 5000, Odense, 9000, Aalborg..." style="width: 100%;" />
+      </div>
+
+      <!-- HURTIGVALG DANMARKS STØRSTE BYER -->
+      <div style="font-size: 12.5px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+        Hurtigvalg (Danmarks 14 største byer):
+      </div>
+      <div id="cityPillsContainer" class="city-pills-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+        <!-- Byer fyldes dynamisk af app.js -->
+      </div>
+
+      <div class="modal-footer-btns" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" id="btnCancelLocation" class="btn-secondary">Annuller</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>MUMS App · Udviklet til det danske dagligvaremarked · Salling Group · REMA 1000 · Open Food Facts · Dansk Retursystem</p>
+  </footer>
+
+  <script src="recipes_db.js"></script>
+  <script src="live_offers.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

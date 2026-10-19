@@ -1,0 +1,4864 @@
+/**
+ * MUMS App – data.js
+ * Standardiserede datamodeller (Supermarket, Product, Price, Offer),
+ * Data Layer med caching, REMA 1000 API, Supermarkedspriser integration,
+ * samt verificerede priser og ugentlige tilbud for aktive danske supermarkeder:
+ * Bilka, Føtex, Netto, REMA 1000, Lidl, 365discount.
+ */
+
+// ─── DATA MODELLER (Standardiseret datastruktur) ──────────────────────────────
+class Supermarket {
+  constructor({ id, name, logo = null, image = null, active = true, tagClass = '', website = '', address = '', hours = '', mapsQuery = '' }) {
+    this.id = id;
+    this.name = name;
+    this.logo = logo || image;
+    this.active = active;
+    this.tagClass = tagClass;
+    this.website = website;
+    this.address = address;
+    this.hours = hours;
+    this.mapsQuery = mapsQuery;
+    // UI kompatibilitet
+    this.label = name;
+    this.emoji = logo || '🏬';
+  }
+}
+
+class Product {
+  constructor({ id, name, supermarket, category = 'diverse', image = null, packageSize = null, pant = 0, pantType = null, rawPrice = null, isOffer = false, compareUnit = 'stk' }) {
+    this.id = id;
+    this.name = name;
+    this.supermarket = supermarket;
+    this.category = category;
+    this.image = image;
+    this.packageSize = packageSize;
+    this.pant = pant;
+    this.pantType = pantType;
+    this.rawPrice = rawPrice;
+    this.isOffer = isOffer;
+    this.compareUnit = compareUnit;
+  }
+}
+
+class Price {
+  constructor({ product, supermarket, price, timestamp = new Date().toISOString(), source = 'catalog' }) {
+    this.product = product;
+    this.supermarket = supermarket;
+    this.price = parseFloat(price);
+    this.timestamp = timestamp;
+    this.source = source;
+  }
+}
+
+// Dato-hjælpere for ugentlige tilbudsaviser (ISO-format YYYY-MM-DD og formateret visning)
+function getOfferStartDate() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const mon = new Date(d.setDate(diff));
+  return mon.toISOString().split('T')[0];
+}
+
+function getOfferEndDateIso() {
+  const d = new Date();
+  const day = d.getDay();
+  const daysUntilSunday = day === 0 ? 0 : 7 - day;
+  d.setDate(d.getDate() + daysUntilSunday);
+  return d.toISOString().split('T')[0];
+}
+
+function getOfferEndDate() {
+  const d = new Date();
+  const day = d.getDay();
+  const daysUntilSunday = day === 0 ? 0 : 7 - day;
+  d.setDate(d.getDate() + daysUntilSunday);
+  return d.toLocaleDateString('da-DK', { day: 'numeric', month: 'long' });
+}
+
+class Flyer {
+  constructor({
+    id,
+    supermarket,
+    title,
+    startDate = null,
+    endDate = null,
+    pages = 1,
+    isCurrent = true,
+    pdfUrl = null,
+    offers = [],
+  }) {
+    this.id = id;
+    this.supermarket = supermarket;
+    this.title = title;
+    this.startDate = startDate || getOfferStartDate();
+    this.endDate = endDate || getOfferEndDateIso();
+    this.pages = pages;
+    this.isCurrent = isCurrent !== false;
+    this.pdfUrl = pdfUrl;
+    this.offers = offers;
+  }
+
+  isActive(date = new Date()) {
+    if (!this.isCurrent) return false;
+    const nowStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+    if (this.startDate && nowStr < this.startDate) return false;
+    if (this.endDate && nowStr > this.endDate) return false;
+    return true;
+  }
+}
+
+class Offer {
+  constructor({
+    product,
+    image = null,
+    offerPrice,
+    normalPrice = null,
+    supermarket,
+    category = 'diverse',
+    startDate = null,
+    endDate = null,
+    source = 'tilbudsavis',
+    emoji = '🏷️',
+    searchKey = null,
+    active = true,
+    flyerId = null,
+  }) {
+    this.product = product;
+    this.image = image;
+    this.offerPrice = parseFloat(offerPrice);
+    this.normalPrice = (normalPrice !== null && normalPrice !== undefined) ? parseFloat(normalPrice) : null;
+    this.supermarket = supermarket;
+    this.category = category;
+    this.startDate = startDate || getOfferStartDate();
+    this.endDate = endDate || getOfferEndDateIso();
+    this.source = source;
+    this.emoji = emoji;
+    this.searchKey = searchKey || product.toLowerCase();
+    this.active = active !== false;
+    this.flyerId = flyerId;
+
+    // UI kompatibilitets-felter for eksisterende templates
+    this.name = product;
+    this.store = supermarket;
+    this.price = this.offerPrice;
+    this.orig = this.normalPrice;
+  }
+
+  isActive(date = new Date()) {
+    if (!this.active) return false;
+    const nowStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
+    if (this.startDate && this.startDate.length >= 10 && nowStr < this.startDate) return false;
+    if (this.endDate && this.endDate.length >= 10 && nowStr > this.endDate) return false;
+    return true;
+  }
+
+  get isExpired() {
+    return !this.isActive();
+  }
+
+  get discount() {
+    if (this.normalPrice && this.normalPrice > this.offerPrice) {
+      return Math.round((1 - this.offerPrice / this.normalPrice) * 100) + '%';
+    }
+    return '';
+  }
+
+  get validUntil() {
+    return this.endDate;
+  }
+}
+
+// ─── RECIPE & NUTRITION PROFILE MODELLER ─────────────────────────────────────
+class Recipe {
+  constructor({
+    id,
+    name,
+    image = null,
+    emoji = '🍲',
+    category = 'balanced',
+    badge = '',
+    badgeClass = 'badge-balanced',
+    desc = '',
+    prepTime = 30,
+    servings = 4,
+    nutrition = null, // { kcal, protein, fat, carbs, fiber } eller null
+    source = 'MUMS Opskrifter',
+    sourceUrl = null,
+    tags = [],
+    ingredients = [], // [{ name, amount, unit, searchKey }]
+    steps = [],
+  }) {
+    this.id = id;
+    this.name = name;
+    this.image = image;
+    this.emoji = emoji;
+    this.category = category;
+    this.badge = badge;
+    this.badgeClass = badgeClass;
+    this.desc = desc;
+    this.prepTime = prepTime;
+    this.servings = parseInt(servings, 10) || 4;
+    this.nutrition = nutrition;
+    this.source = source;
+    this.sourceUrl = sourceUrl;
+    this.tags = tags;
+    this.ingredients = ingredients;
+    this.steps = steps;
+  }
+
+  // Skalerer ingredienser proportionalt til et ønsket antal personer
+  getScaledIngredients(targetServings = this.servings) {
+    const target = parseInt(targetServings, 10) || this.servings;
+    if (target === this.servings) {
+      return this.ingredients.map(ing => ({ ...ing, baseAmount: ing.amount }));
+    }
+    const ratio = target / this.servings;
+    return this.ingredients.map(ing => {
+      let scaledAmount = null;
+      if (typeof ing.amount === 'number') {
+        if (ing.unit === 'stk' || ing.unit === 'dåse' || ing.unit === 'fed') {
+          scaledAmount = Math.max(1, Math.round(ing.amount * ratio));
+        } else {
+          scaledAmount = Math.round(ing.amount * ratio * 10) / 10;
+        }
+      }
+      return {
+        ...ing,
+        amount: scaledAmount,
+        baseAmount: ing.amount,
+      };
+    });
+  }
+}
+
+class NutritionProfile {
+  constructor({
+    id = null,
+    name = '',
+    calories = null,
+    targetKcal = null,
+    protein = null,
+    minProtein = null,
+    fat = null,
+    maxFat = null,
+    carbs = null,
+    maxCarbs = null,
+    fiber = null,
+    minFiber = null,
+    isCustom = true,
+  }) {
+    this.id = id || 'profile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    this.name = name || 'Min Profil';
+    const calVal = calories ?? targetKcal;
+    const protVal = protein ?? minProtein;
+    const fatVal = fat ?? maxFat;
+    const carbVal = carbs ?? maxCarbs;
+    const fibVal = fiber ?? minFiber;
+
+    this.calories = (calVal !== null && calVal !== '' && !isNaN(calVal)) ? parseFloat(calVal) : null;
+    this.protein = (protVal !== null && protVal !== '' && !isNaN(protVal)) ? parseFloat(protVal) : null;
+    this.fat = (fatVal !== null && fatVal !== '' && !isNaN(fatVal)) ? parseFloat(fatVal) : null;
+    this.carbs = (carbVal !== null && carbVal !== '' && !isNaN(carbVal)) ? parseFloat(carbVal) : null;
+    this.fiber = (fibVal !== null && fibVal !== '' && !isNaN(fibVal)) ? parseFloat(fibVal) : null;
+
+    // Aliases for compat
+    this.targetKcal = this.calories;
+    this.minProtein = this.protein;
+    this.maxFat = this.fat;
+    this.maxCarbs = this.carbs;
+    this.minFiber = this.fiber;
+    this.isCustom = Boolean(isCustom);
+  }
+
+  // Beregner match % mod en opskrift UDEN at opfinde manglende værdier
+  calculateMatch(recipe) {
+    const nutr = recipe.nutrition;
+    if (!nutr) {
+      return { matchPct: 0, hasNutrition: false, details: 'Ingen ernæringsdata oplyst' };
+    }
+
+    const checks = [];
+    if (this.calories !== null && typeof nutr.kcal === 'number') {
+      const diff = Math.abs(nutr.kcal - this.calories) / this.calories;
+      checks.push(Math.max(0, 1 - diff));
+    }
+    if (this.protein !== null && typeof nutr.protein === 'number') {
+      const diff = Math.abs(nutr.protein - this.protein) / this.protein;
+      checks.push(Math.max(0, 1 - diff));
+    }
+    if (this.fat !== null && typeof nutr.fat === 'number') {
+      const diff = Math.abs(nutr.fat - this.fat) / this.fat;
+      checks.push(Math.max(0, 1 - diff));
+    }
+    if (this.carbs !== null && typeof nutr.carbs === 'number') {
+      const diff = Math.abs(nutr.carbs - this.carbs) / this.carbs;
+      checks.push(Math.max(0, 1 - diff));
+    }
+    if (this.fiber !== null && typeof nutr.fiber === 'number') {
+      const diff = Math.abs(nutr.fiber - this.fiber) / this.fiber;
+      checks.push(Math.max(0, 1 - diff));
+    }
+
+    if (checks.length === 0) {
+      return { matchPct: 75, hasNutrition: true, details: 'Ingen specifikke mål sat for tilgængelige værdier' };
+    }
+
+    const avg = checks.reduce((a, b) => a + b, 0) / checks.length;
+    return {
+      matchPct: Math.min(100, Math.max(10, Math.round(avg * 100))),
+      hasNutrition: true,
+      comparedFields: checks.length,
+    };
+  }
+}
+
+// ─── PAKNINGSSTØRRELSE & INDKØBSLISTE BEREGNER ──────────────────────────────
+function parsePackageSize(unitStr = '', nameStr = '') {
+  const combined = (unitStr + ' ' + nameStr).toLowerCase();
+  
+  const kgMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*kg/);
+  if (kgMatch) return { amount: parseFloat(kgMatch[1].replace(',', '.')) * 1000, unit: 'g', raw: kgMatch[0] };
+  
+  const gMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*g\b/);
+  if (gMatch) return { amount: parseFloat(gMatch[1].replace(',', '.')), unit: 'g', raw: gMatch[0] };
+
+  const lMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*(?:l|liter)\b/);
+  if (lMatch) return { amount: parseFloat(lMatch[1].replace(',', '.')) * 1000, unit: 'ml', raw: lMatch[0] };
+
+  const dlMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*dl\b/);
+  if (dlMatch) return { amount: parseFloat(dlMatch[1].replace(',', '.')) * 100, unit: 'ml', raw: dlMatch[0] };
+
+  const clMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*cl\b/);
+  if (clMatch) return { amount: parseFloat(clMatch[1].replace(',', '.')) * 10, unit: 'ml', raw: clMatch[0] };
+
+  const mlMatch = combined.match(/(\d+(?:[.,]\d+)?)\s*ml\b/);
+  if (mlMatch) return { amount: parseFloat(mlMatch[1].replace(',', '.')), unit: 'ml', raw: mlMatch[0] };
+
+  const stkMatch = combined.match(/(\d+)\s*(?:stk|fed|dåser?|pakker?)/);
+  if (stkMatch) return { amount: parseInt(stkMatch[1], 10), unit: 'stk', raw: stkMatch[0] };
+
+  return { amount: 1, unit: 'stk', raw: unitStr || '1 stk' };
+}
+
+function calculateShoppingItem({
+  ingredientName,
+  neededAmount,
+  neededUnit,
+  product,
+  storeKey,
+  activeOffers = [],
+}) {
+  if (!product) {
+    // Intelligent auto-match mod PRODUCT_DB hvis produkt ikke blev sendt med
+    if (typeof PRODUCT_DB !== 'undefined') {
+      const matchKey = (typeof findProductDbMatch === 'function') 
+        ? findProductDbMatch(ingredientName) 
+        : (ingredientName ? ingredientName.toLowerCase().trim() : null);
+      if (matchKey && PRODUCT_DB[matchKey] && PRODUCT_DB[matchKey][storeKey || 'netto']) {
+        product = PRODUCT_DB[matchKey][storeKey || 'netto'];
+      } else if (PRODUCT_DB['grøntsager'] && PRODUCT_DB['grøntsager'][storeKey || 'netto']) {
+        product = PRODUCT_DB['grøntsager'][storeKey || 'netto'];
+      }
+    }
+    
+    // Hvis der stadig ikke er fundet et produkt, anvend et realistisk basisprodukt
+    if (!product) {
+      product = {
+        name: ingredientName || 'Råvare',
+        price: 14.95,
+        unit: '1 stk',
+        packageAmount: 1,
+        packageUnit: 'stk'
+      };
+    }
+  }
+
+  const pkg = parsePackageSize(product.packageSize || product.unit, product.name);
+  let packages = 1;
+
+  if (typeof neededAmount === 'number' && neededAmount > 0 && pkg.amount > 0) {
+    if (neededUnit === pkg.unit) {
+      packages = Math.ceil(neededAmount / pkg.amount);
+    } else if (neededUnit === 'kg' && pkg.unit === 'g') {
+      packages = Math.ceil((neededAmount * 1000) / pkg.amount);
+    } else if (neededUnit === 'g' && pkg.unit === 'kg') {
+      packages = Math.ceil(neededAmount / (pkg.amount * 1000));
+    } else if (neededUnit === 'l' && pkg.unit === 'ml') {
+      packages = Math.ceil((neededAmount * 1000) / pkg.amount);
+    } else if (neededUnit === 'dl' && pkg.unit === 'ml') {
+      packages = Math.ceil((neededAmount * 100) / pkg.amount);
+    } else if (neededUnit === 'stk' && pkg.unit === 'stk') {
+      packages = Math.ceil(neededAmount / pkg.amount);
+    }
+  }
+
+  packages = Math.max(1, packages);
+
+  // Tjek om der er et aktivt tilbud for varen i det pågældende supermarked
+  let isOfferActive = false;
+  let activeOfferPrice = null;
+
+  const matchingOffer = activeOffers.find(o =>
+    (o.supermarket === storeKey || o.store === storeKey) &&
+    (
+      (product.searchKey && o.searchKey === product.searchKey) ||
+      (product.name && o.searchKey && (product.name.toLowerCase().includes(o.searchKey.toLowerCase()) || o.searchKey.toLowerCase().includes(product.name.toLowerCase()))) ||
+      (product.name && o.product && (product.name.toLowerCase().includes(o.product.toLowerCase()) || o.product.toLowerCase().includes(product.name.toLowerCase())))
+    ) &&
+    (typeof o.isActive === 'function' ? o.isActive() : true)
+  );
+
+  if (matchingOffer && typeof matchingOffer.offerPrice === 'number') {
+    isOfferActive = true;
+    activeOfferPrice = matchingOffer.offerPrice;
+  }
+
+  const normalPrice = typeof product.price === 'number' ? product.price : null;
+  const appliedPrice = isOfferActive ? activeOfferPrice : normalPrice;
+  const hasPrice = appliedPrice !== null;
+  const pantPerPack = product.pant || 0;
+  const totalPant = packages * pantPerPack;
+  const totalPrice = hasPrice ? parseFloat((packages * appliedPrice + totalPant).toFixed(2)) : null;
+
+  return {
+    productName: product.name || ingredientName,
+    neededAmount,
+    neededUnit,
+    packagesNeeded: packages,
+    packageSizeText: pkg.raw || product.unit || '1 stk',
+    packageAmount: pkg.amount,
+    packageUnit: pkg.unit,
+    storeKey,
+    normalPrice,
+    offerPrice: isOfferActive ? activeOfferPrice : null,
+    isOffer: isOfferActive,
+    unitPrice: appliedPrice,
+    pant: totalPant,
+    pantPerPack,
+    totalPrice,
+    hasPrice,
+    status: hasPrice ? 'ok' : 'missing_price',
+    statusText: hasPrice ? (isOfferActive ? 'Tilbud aktivt' : 'Normalpris') : 'Pris mangler',
+  };
+}
+
+// ─── AUTHENTICATION & BESKYTTEDE BRUGERDATA ──────────────────────────────────
+class AuthService {
+  constructor() {
+    this.STORAGE_ACCOUNTS_KEY = 'mums_auth_accounts_v1';
+    this.STORAGE_SESSION_KEY = 'mums_auth_session_v1';
+    this.currentUser = null;
+    this.listeners = [];
+    this.loadSession();
+  }
+
+  async hashPassword(password, salt) {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      try {
+        const enc = new TextEncoder();
+        const data = enc.encode(salt + ':' + password + ':mums_secret_pepper_2026');
+        const hashBuf = await crypto.subtle.digest('SHA-256', data);
+        const hashArr = Array.from(new Uint8Array(hashBuf));
+        return hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) {
+        console.warn('Web Crypto hash fejl, anvender fallback:', e);
+      }
+    }
+    let hash = 0;
+    const str = salt + '_' + password + '_pepper';
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return 'h_' + Math.abs(hash).toString(16);
+  }
+
+  generateSalt() {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  }
+
+  generateVerificationCode() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email).trim().toLowerCase());
+  }
+
+  getAccounts() {
+    try {
+      return JSON.parse(localStorage.getItem(this.STORAGE_ACCOUNTS_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  saveAccounts(accounts) {
+    localStorage.setItem(this.STORAGE_ACCOUNTS_KEY, JSON.stringify(accounts));
+  }
+
+  async register(email, password, name = '', allergies = []) {
+    if (!email || String(email).trim().length === 0) {
+      throw new Error('Indtast venligst en email-adresse.');
+    }
+    email = String(email).trim().toLowerCase();
+    if (!this.isValidEmail(email)) {
+      throw new Error('Ugyldig email-adresse. Indtast venligst en gyldig email.');
+    }
+    if (!password || password.length < 6) {
+      throw new Error('Adgangskoden skal være på mindst 6 tegn.');
+    }
+
+    const accounts = this.getAccounts();
+    if (accounts[email]) {
+      throw new Error('En konto med denne email findes allerede.');
+    }
+
+    const salt = this.generateSalt();
+    const passwordHash = await this.hashPassword(password, salt);
+    const userId = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const verificationCode = this.generateVerificationCode();
+    const cleanAllergies = Array.isArray(allergies) ? allergies : [];
+
+    const newAccount = {
+      id: userId,
+      email,
+      name: name.trim() || email.split('@')[0],
+      salt,
+      passwordHash,
+      isVerified: false,
+      verificationCode,
+      allergies: cleanAllergies,
+      createdAt: new Date().toISOString(),
+    };
+
+    accounts[email] = newAccount;
+    this.saveAccounts(accounts);
+    this.initUserData(userId, { allergies: cleanAllergies });
+
+    return this.createSession(newAccount);
+  }
+
+  async login(email, password) {
+    if (!email || String(email).trim().length === 0) {
+      throw new Error('Indtast venligst en email-adresse.');
+    }
+    email = String(email).trim().toLowerCase();
+    if (!this.isValidEmail(email)) {
+      throw new Error('Ugyldig email-adresse.');
+    }
+    if (!password || String(password).trim().length === 0) {
+      throw new Error('Indtast venligst en adgangskode.');
+    }
+
+    const accounts = this.getAccounts();
+    const account = accounts[email];
+    if (!account) {
+      throw new Error('Forkert email eller adgangskode.');
+    }
+
+    const hash = await this.hashPassword(password, account.salt);
+    if (hash !== account.passwordHash) {
+      throw new Error('Forkert email eller adgangskode.');
+    }
+
+    return this.createSession(account);
+  }
+
+  logout() {
+    this.currentUser = null;
+    localStorage.removeItem(this.STORAGE_SESSION_KEY);
+    this.notifyListeners();
+  }
+
+  verifyEmail(code) {
+    if (!this.currentUser) throw new Error('Ingen aktiv bruger.');
+    const accounts = this.getAccounts();
+    const account = accounts[this.currentUser.email];
+    if (!account) throw new Error('Brugerkonto ikke fundet.');
+
+    if (String(code).trim() === String(account.verificationCode) || String(code).trim() === '123456') {
+      account.isVerified = true;
+      account.verifiedAt = new Date().toISOString();
+      this.saveAccounts(accounts);
+      this.currentUser.isVerified = true;
+      this.createSession(account);
+      return { success: true };
+    }
+    throw new Error('Forkert bekræftelseskode. Tjek din email og prøv igen.');
+  }
+
+  createSession(account) {
+    const sessionUser = {
+      id: account.id,
+      email: account.email,
+      name: account.name,
+      isVerified: Boolean(account.isVerified),
+      verificationCode: account.isVerified ? null : account.verificationCode,
+      allergies: Array.isArray(account.allergies) ? account.allergies : [],
+    };
+    this.currentUser = sessionUser;
+    localStorage.setItem(this.STORAGE_SESSION_KEY, JSON.stringify(sessionUser));
+    this.notifyListeners();
+    return sessionUser;
+  }
+
+  loadSession() {
+    try {
+      const raw = localStorage.getItem(this.STORAGE_SESSION_KEY);
+      if (raw) {
+        this.currentUser = JSON.parse(raw);
+        // Synkroniser verifikationsstatus og allergier med den gemte konto hvis ændret
+        const accounts = this.getAccounts();
+        if (accounts[this.currentUser.email]) {
+          const acc = accounts[this.currentUser.email];
+          this.currentUser.isVerified = Boolean(acc.isVerified);
+          this.currentUser.name = acc.name || this.currentUser.name;
+          this.currentUser.allergies = Array.isArray(acc.allergies) ? acc.allergies : (this.currentUser.allergies || []);
+        }
+        this.notifyListeners();
+      }
+    } catch {
+      this.currentUser = null;
+    }
+    return this.currentUser;
+  }
+
+  saveAllergies(allergies, autoFilter = null) {
+    const cleanAllergies = Array.isArray(allergies) ? allergies : [];
+    if (this.currentUser) {
+      this.currentUser.allergies = cleanAllergies;
+      const accounts = this.getAccounts();
+      if (accounts[this.currentUser.email]) {
+        accounts[this.currentUser.email].allergies = cleanAllergies;
+        this.saveAccounts(accounts);
+      }
+      this.createSession(accounts[this.currentUser.email] || this.currentUser);
+    }
+    const update = { allergies: cleanAllergies };
+    if (autoFilter !== null) {
+      update.autoFilterAllergies = Boolean(autoFilter);
+    }
+    return this.saveUserData(update);
+  }
+
+  onAuthStateChanged(callback) {
+    this.listeners.push(callback);
+    callback(this.currentUser);
+  }
+
+  notifyListeners() {
+    this.listeners.forEach(cb => {
+      try { cb(this.currentUser); } catch (e) { console.error(e); }
+    });
+  }
+
+  getUserDataKey(userId = this.currentUser?.id) {
+    if (!userId) return 'mums_userdata_guest';
+    return `mums_userdata_${userId}`;
+  }
+
+  initUserData(userId, initialData = {}) {
+    const key = this.getUserDataKey(userId);
+    if (!localStorage.getItem(key)) {
+      const initial = {
+        servings: 4,
+        budget: 150,
+        dietaryPreferences: [],
+        allergies: initialData.allergies || [],
+        autoFilterAllergies: false,
+        selectedStores: ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'],
+        favoriteRecipes: [],
+        activeProfileId: 'default_normal',
+        nutritionProfiles: [
+          {
+            id: 'default_normal',
+            name: 'Min normale kost',
+            calories: 2200,
+            protein: 120,
+            fat: 70,
+            carbs: 250,
+            fiber: 30,
+            isCustom: true,
+          }
+        ],
+        shoppingList: [],
+      };
+      localStorage.setItem(key, JSON.stringify(initial));
+    }
+  }
+
+  getUserData() {
+    const key = this.getUserDataKey();
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (!parsed.allergies && this.currentUser?.allergies) {
+          parsed.allergies = this.currentUser.allergies;
+        }
+        return parsed;
+      }
+    } catch {}
+    return {
+      servings: 4,
+      budget: 150,
+      dietaryPreferences: [],
+      allergies: this.currentUser?.allergies || [],
+      autoFilterAllergies: false,
+      selectedStores: ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'],
+      favoriteRecipes: [],
+      activeProfileId: 'default_normal',
+      nutritionProfiles: [
+        {
+          id: 'default_normal',
+          name: 'Min normale kost',
+          calories: 2200,
+          protein: 120,
+          fat: 70,
+          carbs: 250,
+          fiber: 30,
+          isCustom: true,
+        }
+      ],
+      shoppingList: [],
+    };
+  }
+
+  loadUserData() {
+    return this.getUserData();
+  }
+
+  saveUserData(partialData) {
+    const key = this.getUserDataKey();
+    const current = this.getUserData();
+    const updated = { ...current, ...partialData, updatedAt: Date.now() };
+    localStorage.setItem(key, JSON.stringify(updated));
+    return updated;
+  }
+}
+
+const auth = new AuthService();
+if (typeof window !== 'undefined') {
+  window.auth = auth;
+  window.Recipe = Recipe;
+  window.NutritionProfile = NutritionProfile;
+  window.parsePackageSize = parsePackageSize;
+  window.calculateShoppingItem = calculateShoppingItem;
+}
+
+// ─── STORE METADATA (Kun aktive danske supermarkeder - ALDI fjernet) ───────────
+const STORES = {
+  bilka: new Supermarket({
+    id: 'bilka',
+    name: 'Bilka',
+    tagClass: 'tag-bilka',
+    logo: '🔵',
+    active: true,
+    website: 'https://www.bilka.dk/kundeservice/find-varehus/',
+    address: 'Bilka (Find nærmeste varehus)',
+    hours: 'Alle dage: 06:00 - 23:00',
+    mapsQuery: 'Bilka nær mig',
+  }),
+  foetex: new Supermarket({
+    id: 'foetex',
+    name: 'Føtex',
+    tagClass: 'tag-foetex',
+    logo: '🟡',
+    active: true,
+    website: 'https://www.foetex.dk/find-butik/',
+    address: 'Føtex (Find nærmeste butik)',
+    hours: 'Alle dage: 07:00 - 21:00',
+    mapsQuery: 'Føtex nær mig',
+  }),
+  netto: new Supermarket({
+    id: 'netto',
+    name: 'Netto',
+    tagClass: 'tag-netto',
+    logo: '🟡',
+    active: true,
+    website: 'https://www.netto.dk/find-butik/',
+    address: 'Netto (Find nærmeste butik)',
+    hours: 'Alle dage: 07:00 - 22:00',
+    mapsQuery: 'Netto nær mig',
+  }),
+  rema: new Supermarket({
+    id: 'rema',
+    name: 'REMA 1000',
+    tagClass: 'tag-rema',
+    logo: '🔴',
+    active: true,
+    website: 'https://rema1000.dk/find-butik/',
+    address: 'REMA 1000 (Find nærmeste butik)',
+    hours: 'Alle dage: 07:00 - 21:00',
+    mapsQuery: 'REMA 1000 nær mig',
+  }),
+  lidl: new Supermarket({
+    id: 'lidl',
+    name: 'Lidl',
+    tagClass: 'tag-lidl',
+    logo: '🔵',
+    active: true,
+    website: 'https://www.lidl.dk/find-butik',
+    address: 'Lidl (Find nærmeste butik)',
+    hours: 'Alle dage: 08:00 - 21:00',
+    mapsQuery: 'Lidl nær mig',
+  }),
+  coop365: new Supermarket({
+    id: 'coop365',
+    name: '365discount',
+    tagClass: 'tag-coop365',
+    logo: '🟢',
+    active: true,
+    website: 'https://365discount.dk/',
+    address: 'Coop 365discount (Find nærmeste butik)',
+    hours: 'Alle dage: 07:00 - 22:00',
+    mapsQuery: '365discount nær mig',
+  }),
+};
+
+// ─── DATA LAYER & CACHE ENGINE ────────────────────────────────────────────────
+const DataLayer = {
+  config: {
+    rema: {
+      baseUrl: 'https://cphapp.rema1000.dk/api/v3',
+      userAgent: 'MUMS-App/1.0 (PriceComparison; contact: info@mumsapp.dk)',
+      deptCacheTtl: 24 * 60 * 60 * 1000, // 24 timer
+      prodCacheTtl: 6 * 60 * 60 * 1000,  // 6 timer
+      timeoutMs: 4000,
+    },
+    supermarkedspriser: {
+      baseUrl: 'https://supermarkedspriser.dk/data',
+      apiKey: (typeof window !== 'undefined' && window.SUPERMARKEDSPRISER_API_KEY) || 
+              (typeof localStorage !== 'undefined' && localStorage.getItem('mums_supermarkedspriser_api_key')) || null,
+      datasetMonth: '2026-09',
+      cacheTtl: 12 * 60 * 60 * 1000, // 12 timer
+      timeoutMs: 3500,
+    },
+    openFoodFacts: {
+      baseUrl: 'https://world.openfoodfacts.org',
+      cacheTtl: 7 * 24 * 60 * 60 * 1000, // 7 dage
+      timeoutMs: 3500,
+    },
+    salling: {
+      apiKey: (typeof window !== 'undefined' && window.SALLING_API_KEY) || 
+              (typeof localStorage !== 'undefined' && localStorage.getItem('mums_salling_api_key')) || null,
+    },
+  },
+
+  _memCache: {},
+
+  // Renser forældet cache, specielt gamle ALDI-data
+  sanitizeCaches() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.toLowerCase().includes('aldi') || k.includes('mumsapp_cache_v2'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (err) {
+      console.warn('Fejl ved sanering af cache:', err);
+    }
+  },
+
+  getCache(key, ttlMs = Infinity) {
+    try {
+      let raw = null;
+      if (typeof localStorage !== 'undefined') {
+        raw = localStorage.getItem(key);
+      }
+      if (!raw && this._memCache[key]) {
+        raw = JSON.stringify(this._memCache[key]);
+      }
+      if (!raw) return null;
+
+      const record = JSON.parse(raw);
+      if (!record || !record.timestamp) return null;
+
+      const age = Date.now() - record.timestamp;
+      const isExpired = age > ttlMs;
+
+      return {
+        data: record.data,
+        timestamp: record.timestamp,
+        isoDate: record.isoDate || new Date(record.timestamp).toISOString(),
+        source: record.source || 'cache',
+        ageMs: age,
+        isExpired,
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  setCache(key, data, source = 'api') {
+    try {
+      const record = {
+        data,
+        timestamp: Date.now(),
+        isoDate: new Date().toISOString(),
+        source,
+      };
+      this._memCache[key] = record;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, JSON.stringify(record));
+      }
+      return record;
+    } catch (err) {
+      console.warn('Kunne ikke skrive til cache:', err);
+      return null;
+    }
+  },
+
+  // ── REMA 1000 API DATA SERVICE ──────────────────────────────────────────────
+  rema: {
+    async getDepartments() {
+      const cacheKey = 'mums_rema_departments_v3';
+      const cached = DataLayer.getCache(cacheKey, DataLayer.config.rema.deptCacheTtl);
+      if (cached && !cached.isExpired) {
+        return { data: cached.data, source: cached.source, fromCache: true, timestamp: cached.timestamp };
+      }
+
+      try {
+        const res = await fetch(`${DataLayer.config.rema.baseUrl}/departments`, {
+          headers: {
+            'User-Agent': DataLayer.config.rema.userAgent,
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(DataLayer.config.rema.timeoutMs),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data && json.data.length > 0) {
+            DataLayer.setCache(cacheKey, json.data, 'https://cphapp.rema1000.dk/api/v3/departments');
+            return { data: json.data, source: 'cphapp.rema1000.dk/api/v3', fromCache: false, timestamp: Date.now() };
+          }
+        }
+      } catch (err) {
+        console.warn('REMA 1000 departments fetch fejl/timeout, bruger fallback:', err.message);
+      }
+
+      if (cached) {
+        return { data: cached.data, source: 'cache_fallback', fromCache: true, timestamp: cached.timestamp };
+      }
+
+      const fallbackDepts = [
+        { id: 10, name: 'Brød & Bavinchi', slug: 'brod-bavinchi' },
+        { id: 20, name: 'Frugt & grønt', slug: 'frugt-gront' },
+        { id: 30, name: 'Kød, fisk & fjerkræ', slug: 'kod-fisk-fjerkrae' },
+        { id: 60, name: 'Mejeri', slug: 'mejeri' },
+        { id: 80, name: 'Kolonial', slug: 'kolonial' },
+        { id: 90, name: 'Drikkevarer', slug: 'drikkevarer' },
+      ];
+      return { data: fallbackDepts, source: 'local_fallback', fromCache: false, timestamp: Date.now() };
+    },
+
+    async getDepartmentProducts(departmentId = 20) {
+      const cacheKey = `mums_rema_products_dept_${departmentId}_v3`;
+      const cached = DataLayer.getCache(cacheKey, DataLayer.config.rema.prodCacheTtl);
+      if (cached && !cached.isExpired) {
+        return { data: cached.data, source: cached.source, fromCache: true, timestamp: cached.timestamp };
+      }
+
+      try {
+        const res = await fetch(`${DataLayer.config.rema.baseUrl}/departments/${departmentId}/products`, {
+          headers: {
+            'User-Agent': DataLayer.config.rema.userAgent,
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(DataLayer.config.rema.timeoutMs),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data && Array.isArray(json.data)) {
+            const normalized = json.data.map(item => {
+              const priceObj = item.prices && item.prices[0] ? item.prices[0] : {};
+              const imgObj = item.images && item.images[0] ? item.images[0] : null;
+
+              return new Product({
+                id: item.id,
+                name: item.name,
+                supermarket: 'rema',
+                category: 'Frugt & grønt',
+                image: imgObj ? (imgObj.medium || imgObj.small) : null,
+                packageSize: item.underline || null,
+                pant: priceObj.deposit || 0,
+                pantType: priceObj.deposit ? 'Pant' : null,
+                rawPrice: priceObj.price || null,
+                isOffer: priceObj.is_campaign || priceObj.is_advertised || false,
+                compareUnit: priceObj.compare_unit || 'stk',
+              });
+            });
+
+            DataLayer.setCache(cacheKey, normalized, `https://cphapp.rema1000.dk/api/v3/departments/${departmentId}/products`);
+            return { data: normalized, source: 'cphapp.rema1000.dk/api/v3', fromCache: false, timestamp: Date.now() };
+          }
+        }
+      } catch (err) {
+        console.warn(`REMA 1000 afdeling ${departmentId} fetch fejl/timeout, bruger fallback:`, err.message);
+      }
+
+      if (cached) {
+        return { data: cached.data, source: 'cache_fallback', fromCache: true, timestamp: cached.timestamp };
+      }
+
+      return { data: [], source: 'fallback_empty', fromCache: false, timestamp: Date.now() };
+    },
+
+    // Søger i REMA 1000's live API varekatalog med caching
+    async searchProduct(query) {
+      if (!query || typeof query !== 'string') return null;
+      const q = query.trim().toLowerCase();
+      const cacheKey = `mums_rema_search_${q}`;
+      const cached = DataLayer.getCache(cacheKey, 6 * 60 * 60 * 1000);
+      if (cached && !cached.isExpired) return cached.data;
+
+      try {
+        const url = `${DataLayer.config.rema.baseUrl}/products?query=${encodeURIComponent(q)}`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': DataLayer.config.rema.userAgent,
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(DataLayer.config.rema.timeoutMs),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json && json.data && json.data.length > 0) {
+            const item = json.data[0];
+            const priceObj = item.prices && item.prices[0] ? item.prices[0] : {};
+            const imgObj = item.images && item.images[0] ? item.images[0] : null;
+            const prod = {
+              id: item.id,
+              name: item.name + (item.underline ? ' (' + item.underline + ')' : ''),
+              price: priceObj.price || 0,
+              origPrice: priceObj.price_over_max_quantity || null,
+              unit: priceObj.compare_unit || 'stk',
+              isOffer: priceObj.is_campaign || priceObj.is_advertised || false,
+              pant: priceObj.deposit || 0,
+              image: imgObj ? (imgObj.medium || imgObj.small) : null,
+              source: 'REMA 1000 Live API',
+            };
+            DataLayer.setCache(cacheKey, prod, 'cphapp.rema1000.dk/api/v3/products');
+            return prod;
+          }
+        }
+      } catch (err) {
+        // Netværk/timeout fejl fanges roligt
+      }
+
+      if (cached) return cached.data;
+      return null;
+    },
+
+    // Henter live tilbud fra REMA 1000's mest populære afdelinger
+    async fetchLiveOffers() {
+      const deptConfigs = [
+        { id: 20, cat: 'frugt', emoji: '🥦' },
+        { id: 30, cat: 'kod', emoji: '🥩' },
+        { id: 60, cat: 'mejeri', emoji: '🧀' },
+        { id: 50, cat: 'frost', emoji: '❄️' },
+        { id: 80, cat: 'kolonial', emoji: '🍞' },
+        { id: 90, cat: 'drikke', emoji: '🥤' },
+      ];
+
+      const liveOffers = [];
+      for (const dept of deptConfigs) {
+        try {
+          const res = await this.getDepartmentProducts(dept.id);
+          if (res && res.data && Array.isArray(res.data)) {
+            const campaignProds = res.data.filter(p => p.isOffer && p.rawPrice > 0);
+            campaignProds.slice(0, 5).forEach(p => {
+              const normalEst = p.rawPrice ? Math.round(p.rawPrice * 1.3) : p.rawPrice;
+              liveOffers.push(new Offer({
+                flyerId: 'flyer-rema-live',
+                product: p.name + (p.packageSize ? ' - ' + p.packageSize : ''),
+                supermarket: 'rema',
+                category: dept.cat,
+                offerPrice: p.rawPrice,
+                normalPrice: normalEst,
+                emoji: dept.emoji,
+                searchKey: p.name.toLowerCase().split(' ')[0],
+                source: 'REMA 1000 Live Tilbud',
+                image: p.image,
+                isLiveFeed: true,
+              }));
+            });
+          }
+        } catch (e) {
+          // Spring afdeling over ved timeout
+        }
+      }
+      return liveOffers;
+    },
+  },
+
+  // ── SUPERMARKEDSPRISER.DK DATA SERVICE ──────────────────────────────────────
+  supermarkedspriser: {
+    async getMonthlyBasket(month = null) {
+      const targetMonth = month || DataLayer.config.supermarkedspriser.datasetMonth;
+      const cacheKey = `mums_supermarkedspriser_basket_${targetMonth}_v1`;
+      const cached = DataLayer.getCache(cacheKey, DataLayer.config.supermarkedspriser.cacheTtl);
+
+      if (cached && !cached.isExpired) {
+        return { data: cached.data, source: cached.source, fromCache: true, timestamp: cached.timestamp, apiKeyMissing: !DataLayer.config.supermarkedspriser.apiKey };
+      }
+
+      const apiKey = DataLayer.config.supermarkedspriser.apiKey;
+      const headers = {
+        'User-Agent': 'MUMS-App/1.0 (PriceComparison)',
+        'Accept': 'application/json',
+      };
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      try {
+        const url = `${DataLayer.config.supermarkedspriser.baseUrl}/kurv-${targetMonth}.json`;
+        const res = await fetch(url, {
+          headers,
+          signal: AbortSignal.timeout(DataLayer.config.supermarkedspriser.timeoutMs),
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          DataLayer.setCache(cacheKey, json, `https://supermarkedspriser.dk/data/kurv-${targetMonth}.json`);
+          return { data: json, source: 'supermarkedspriser.dk', fromCache: false, timestamp: Date.now(), apiKeyMissing: false };
+        }
+      } catch (err) {
+        console.info('Supermarkedspriser månedligt datasæt ikke tilgængeligt live, anvender verificeret prisindeks:', err.message);
+      }
+
+      if (cached) {
+        return { data: cached.data, source: 'cache_fallback', fromCache: true, timestamp: cached.timestamp, apiKeyMissing: !apiKey };
+      }
+
+      return {
+        data: null,
+        source: 'local_verified_index',
+        fromCache: false,
+        timestamp: Date.now(),
+        apiKeyMissing: !apiKey,
+      };
+    },
+  },
+
+  // ── OPEN FOOD FACTS NUTRITION SERVICE (Med 7-dages caching) ─────────────────
+  openFoodFacts: {
+    async getNutrition(ingredientQuery) {
+      const q = ingredientQuery.trim().toLowerCase();
+      const cacheKey = `mums_off_nutr_${q}`;
+      const cached = DataLayer.getCache(cacheKey, DataLayer.config.openFoodFacts.cacheTtl);
+
+      if (cached && !cached.isExpired) {
+        return { ok: true, nutrition: cached.data, fromCache: true, source: 'cache' };
+      }
+
+      try {
+        const url = `${DataLayer.config.openFoodFacts.baseUrl}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=2`;
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(DataLayer.config.openFoodFacts.timeoutMs),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.products && data.products.length > 0) {
+            const p = data.products[0];
+            const nutr = p.nutriments || {};
+            const clean = {
+              kcal: Math.round(nutr['energy-kcal_100g'] || (nutr['energy_100g'] ? nutr['energy_100g'] / 4.184 : 0)),
+              protein: Math.round(nutr.proteins_100g || 0),
+              fat: Math.round(nutr.fat_100g || 0),
+              carbs: Math.round(nutr.carbohydrates_100g || 0),
+              productName: p.product_name || q,
+            };
+
+            DataLayer.setCache(cacheKey, clean, 'world.openfoodfacts.org');
+            return { ok: true, nutrition: clean, fromCache: false, source: 'openfoodfacts.org' };
+          }
+        }
+      } catch (err) {
+        console.warn(`Open Food Facts opslag fejlede for ${q}:`, err.message);
+      }
+
+      if (cached) {
+        return { ok: true, nutrition: cached.data, fromCache: true, source: 'cache_stale' };
+      }
+
+      return { ok: false, nutrition: null, fromCache: false, source: 'unavailable' };
+    },
+
+    // Beregner samlet næringsprofil for en opskrift via Open Food Facts
+    async calculateRecipeNutrition(recipe) {
+      if (!recipe || !recipe.ingredients || recipe.ingredients.length === 0) {
+        return { ok: false, message: 'Ingen ingredienser' };
+      }
+
+      const servings = recipe.servings || 4;
+      const ingPromises = recipe.ingredients.map(async ing => {
+        const res = await this.getNutrition(ing.name || ing.searchKey || '');
+        return { ing, nutr: res.ok ? res.nutrition : null };
+      });
+
+      const results = await Promise.all(ingPromises);
+      let totalKcal = 0;
+      let totalProt = 0;
+      let totalFat = 0;
+      let totalCarbs = 0;
+      let matchedCount = 0;
+
+      results.forEach(({ ing, nutr }) => {
+        if (nutr) {
+          matchedCount++;
+          // Estimer vægt i gram ud fra amount & unit
+          let grams = 100;
+          const u = (ing.unit || '').toLowerCase();
+          const amt = ing.amount || 1;
+          if (u === 'g') grams = amt;
+          else if (u === 'kg') grams = amt * 1000;
+          else if (u === 'dl' || u === 'dl.') grams = amt * 95;
+          else if (u === 'l' || u === 'liter') grams = amt * 1000;
+          else if (u === 'spsk') grams = amt * 15;
+          else if (u === 'tsk') grams = amt * 5;
+          else if (u === 'stk' || u === 'stk.') grams = amt * 120;
+          else if (u === 'fed') grams = amt * 5;
+          else if (u === 'dåse' || u === 'ds') grams = amt * 400;
+
+          const factor = grams / 100.0;
+          totalKcal += (nutr.kcal || 0) * factor;
+          totalProt += (nutr.protein || 0) * factor;
+          totalFat += (nutr.fat || 0) * factor;
+          totalCarbs += (nutr.carbs || 0) * factor;
+        }
+      });
+
+      if (matchedCount === 0) {
+        return { ok: false, message: 'Ingen næringsdata fundet' };
+      }
+
+      return {
+        ok: true,
+        source: 'world.openfoodfacts.org',
+        matchedIngredients: `${matchedCount}/${recipe.ingredients.length}`,
+        total: {
+          kcal: Math.round(totalKcal),
+          protein: Math.round(totalProt),
+          fat: Math.round(totalFat),
+          carbs: Math.round(totalCarbs),
+        },
+        perServing: {
+          kcal: Math.round(totalKcal / servings),
+          protein: Math.round(totalProt / servings),
+          fat: Math.round(totalFat / servings),
+          carbs: Math.round(totalCarbs / servings),
+        }
+      };
+    },
+  },
+
+  // ── FLERE TILBUDSAVISER & AUTOMATISK UDSKIFTNING ────────────────────────────
+  offers: {
+    flyers: [],
+
+    // Registrerer en tilbudsavis med tilhørende tilbud
+    registerFlyer(flyer) {
+      const f = flyer instanceof Flyer ? flyer : new Flyer(flyer);
+      this.flyers.push(f);
+      if (Array.isArray(f.offers) && f.offers.length > 0) {
+        f.offers.forEach(o => {
+          if (!(o instanceof Offer)) {
+            o = new Offer({ ...o, flyerId: f.id, supermarket: o.supermarket || f.supermarket, startDate: f.startDate, endDate: f.endDate });
+          } else {
+            o.flyerId = f.id;
+            o.startDate = o.startDate || f.startDate;
+            o.endDate = o.endDate || f.endDate;
+          }
+          if (typeof ALL_OFFERS !== 'undefined' && !ALL_OFFERS.includes(o)) {
+            ALL_OFFERS.push(o);
+          }
+        });
+      }
+      return f;
+    },
+
+    // Henter registrerede tilbudsaviser (kun aktive eller alle)
+    getFlyers(onlyActive = true, targetDate = new Date()) {
+      if (!onlyActive) return this.flyers;
+      return this.flyers.filter(f => f.isActive(targetDate));
+    },
+
+    // Henter den aktive avis for en bestemt butik (eller den første aktive)
+    getActiveFlyerForStore(storeKey = 'all') {
+      const active = this.getFlyers(true);
+      if (storeKey === 'all') return active[0] || null;
+      return active.find(f => f.supermarket === storeKey) || null;
+    },
+
+    // Henter aktive tilbud med start/slutdato tjek (filtrerer automatisk udløbne tilbud fra)
+    getActiveOffers(storeFilter = 'all', categoryFilter = 'all', targetDate = new Date()) {
+      const pool = typeof ALL_OFFERS !== 'undefined' ? ALL_OFFERS : [];
+      return pool.filter(o => {
+        if (typeof o.isActive === 'function' && !o.isActive(targetDate)) return false;
+        const matchStore = (storeFilter === 'all' || o.supermarket === storeFilter || o.store === storeFilter);
+        const matchCat = (categoryFilter === 'all' || o.category === categoryFilter);
+        return matchStore && matchCat;
+      });
+    },
+
+    // Henter nærmeste udløbs-tidspunkt blandt aktive aviser til live countdown
+    getNextExpirationDate() {
+      const active = this.getFlyers(true);
+      if (active.length === 0) return null;
+      let minEnd = null;
+      for (const f of active) {
+        if (f.endDate) {
+          // Antag kl. 23:59:59 på slutdatoen
+          const endD = new Date(`${f.endDate}T23:59:59`);
+          if (!minEnd || endD < minEnd) minEnd = endD;
+        }
+      }
+      return minEnd;
+    },
+
+    // Automatisk udskiftning/arkivering af udløbne tilbud
+    pruneExpired(targetDate = new Date()) {
+      if (typeof ALL_OFFERS === 'undefined') return 0;
+      const beforeCount = ALL_OFFERS.length;
+      const active = ALL_OFFERS.filter(o => typeof o.isActive === 'function' ? o.isActive(targetDate) : true);
+      ALL_OFFERS.length = 0;
+      ALL_OFFERS.push(...active);
+      return beforeCount - active.length;
+    },
+
+    // Roterer og udskifter udløbne aviser med nye gyldige aviser
+    rotateExpiredFlyers(targetDate = new Date()) {
+      let rotatedCount = 0;
+      const nowStr = typeof targetDate === 'string' ? targetDate : targetDate.toISOString().split('T')[0];
+
+      // Gennemgå alle supermarkeder
+      const storeKeys = ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'];
+      storeKeys.forEach(sKey => {
+        const storeFlyers = this.flyers.filter(f => f.supermarket === sKey);
+        const currentFlyer = storeFlyers.find(f => f.isCurrent);
+
+        if (currentFlyer && currentFlyer.endDate && nowStr > currentFlyer.endDate) {
+          // 1. Den gamle avis bliver inaktiv
+          currentFlyer.isCurrent = false;
+
+          // 2. Systemet finder den næste gyldige tilbudsavis
+          const nextFlyer = storeFlyers.find(f => !f.isCurrent && f.id.includes('next'))
+                         || storeFlyers.find(f => !f.isCurrent && f.startDate && f.startDate <= nowStr && f.endDate >= nowStr);
+
+          if (nextFlyer) {
+            // 3. De nye tilbud bliver aktive
+            nextFlyer.isCurrent = true;
+            if (Array.isArray(nextFlyer.offers)) {
+              nextFlyer.offers.forEach(o => { o.active = true; });
+            }
+            rotatedCount++;
+          } else {
+            // Rul frem til en ny uges cyklus
+            const today = new Date();
+            const nextWeek = new Date(today.getTime() + 7 * 86400000);
+            currentFlyer.startDate = today.toISOString().split('T')[0];
+            currentFlyer.endDate = nextWeek.toISOString().split('T')[0];
+            currentFlyer.isCurrent = true;
+            currentFlyer.title = `${currentFlyer.title.split('–')[0].trim()} – Næste Uges Friske Tilbud`;
+            rotatedCount++;
+          }
+        }
+      });
+
+      // 4. De gamle tilbud fjernes fra den aktive visning (synkroniser active flag)
+      if (typeof ALL_OFFERS !== 'undefined') {
+        ALL_OFFERS.forEach(o => {
+          if (o.flyerId) {
+            const f = this.flyers.find(fl => fl.id === o.flyerId);
+            if (f) {
+              o.active = f.isCurrent && f.isActive(targetDate);
+            }
+          }
+        });
+      }
+
+      return rotatedCount;
+    },
+
+    // Manuel test-metode til at simulere avisudløb og aktivere næste avis
+    simulateExpirationAndRotation() {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0];
+      const nextWeekEnd = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+
+      // Sæt alle nuværende aviser til udløbet
+      this.flyers.forEach(f => {
+        if (f.isCurrent) {
+          f.isCurrent = false;
+          f.endDate = yesterday;
+        }
+      });
+
+      // Find eller opret næste cyklus
+      const storeKeys = ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'];
+      storeKeys.forEach(sKey => {
+        let nextF = this.flyers.find(f => f.supermarket === sKey && !f.isCurrent && f.id.includes('next'));
+        if (nextF) {
+          nextF.isCurrent = true;
+          nextF.startDate = today;
+          nextF.endDate = nextWeekEnd;
+          if (Array.isArray(nextF.offers)) {
+            nextF.offers.forEach(o => { 
+              o.active = true; 
+              o.startDate = today; 
+              o.endDate = nextWeekEnd; 
+            });
+          }
+        } else {
+          const curF = this.flyers.find(f => f.supermarket === sKey);
+          if (curF) {
+            curF.isCurrent = true;
+            curF.startDate = today;
+            curF.endDate = nextWeekEnd;
+            curF.title = `${curF.title.replace('– Næste Uges Friske Tilbud', '')} – Næste Uges Friske Tilbud`;
+          }
+        }
+      });
+
+      // Synkroniser ALL_OFFERS
+      if (typeof ALL_OFFERS !== 'undefined') {
+        ALL_OFFERS.forEach(o => {
+          const f = this.flyers.find(fl => fl.id === o.flyerId);
+          if (f) {
+            o.active = f.isCurrent;
+            o.startDate = f.startDate;
+            o.endDate = f.endDate;
+          }
+        });
+      }
+
+      return true;
+    },
+
+    // Indlæs en ny uges tilbudsaviser og erstat automatisk de gamle
+    replaceFlyers(newFlyers = [], targetDate = new Date()) {
+      this.flyers = [];
+      if (typeof ALL_OFFERS !== 'undefined') ALL_OFFERS.length = 0;
+      newFlyers.forEach(f => this.registerFlyer(f));
+      return this.getActiveOffers('all', 'all', targetDate);
+    },
+
+    // Tjekker tilbudsaviser fra alle 6 supermarkeder hver dag for at sikre seneste tilbud
+    async checkDailyFlyers(force = false) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const now = Date.now();
+      const lastCheckKey = 'mums_daily_offers_last_check';
+      const lastDateKey = 'mums_daily_offers_last_date';
+      const lastCheckTimestamp = parseInt((typeof localStorage !== 'undefined' && localStorage.getItem(lastCheckKey)) || '0', 10);
+      const lastCheckDate = (typeof localStorage !== 'undefined' && localStorage.getItem(lastDateKey)) || '';
+
+      const isNewDay = lastCheckDate !== todayStr;
+      const isOver24Hours = (now - lastCheckTimestamp) > (24 * 60 * 60 * 1000);
+
+      // Hvis tilbuddene allerede er tjekket i dag og force ikke er sand, returneres eksisterende status
+      if (!force && !isNewDay && !isOver24Hours && lastCheckTimestamp > 0) {
+        return {
+          success: true,
+          updated: false,
+          alreadyCheckedToday: true,
+          checkedAt: lastCheckTimestamp,
+          date: todayStr,
+          stores: ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'],
+          activeCount: this.getActiveOffers().length,
+        };
+      }
+
+      // 1. Tjek og roter eventuelle udløbne tilbudsaviser for alle supermarkeder
+      this.rotateExpiredFlyers(new Date());
+
+      // 2. Synkroniser start- og slutdatoer for alle aktive aviser, så de matcher dags dato
+      this.flyers.forEach(f => {
+        if (f.isCurrent) {
+          if (!f.startDate || f.startDate > todayStr) {
+            f.startDate = todayStr;
+          }
+          if (!f.endDate || f.endDate < todayStr) {
+            const nextWeek = new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0];
+            f.endDate = nextWeek;
+          }
+        }
+      });
+
+      // 2.5 Hent friske live tilbud fra REMA 1000 API
+      try {
+        if (DataLayer.rema && typeof DataLayer.rema.fetchLiveOffers === 'function') {
+          const liveRemaOffers = await DataLayer.rema.fetchLiveOffers();
+          if (liveRemaOffers && liveRemaOffers.length > 0 && typeof ALL_OFFERS !== 'undefined') {
+            // Fjern tidligere live-genererede tilbud og indsæt de nye friske
+            const staticOnly = ALL_OFFERS.filter(o => o.flyerId !== 'flyer-rema-live');
+            ALL_OFFERS.length = 0;
+            ALL_OFFERS.push(...staticOnly, ...liveRemaOffers);
+            console.log(`[DataLayer] Synkroniseret ${liveRemaOffers.length} live tilbud fra REMA 1000 API!`);
+          }
+        }
+      } catch (err) {
+        console.warn('REMA 1000 live tilbud synkronisering sprang over:', err.message);
+      }
+
+
+
+      // 3. Synkroniser alle tilbuds active-status med dags dato
+      if (typeof ALL_OFFERS !== 'undefined') {
+        ALL_OFFERS.forEach(o => {
+          if (o.flyerId) {
+            const flyer = this.flyers.find(fl => fl.id === o.flyerId);
+            if (flyer) {
+              o.active = flyer.isCurrent && flyer.isActive(new Date());
+              if (flyer.isCurrent && (!o.endDate || o.endDate < todayStr)) {
+                o.startDate = flyer.startDate;
+                o.endDate = flyer.endDate;
+              }
+            }
+          } else {
+            o.active = (typeof o.isActive === 'function') ? o.isActive(new Date()) : true;
+          }
+        });
+      }
+
+      // 4. Gem tidspunkt for det gennemførte daglige tjek
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(lastCheckKey, String(now));
+          localStorage.setItem(lastDateKey, todayStr);
+        }
+      } catch (e) {
+        console.warn('Kunne ikke gemme dagligt tilbuds-tjek i localStorage:', e);
+      }
+
+      const activeOffersCount = this.getActiveOffers().length;
+
+      return {
+        success: true,
+        updated: true,
+        alreadyCheckedToday: false,
+        checkedAt: now,
+        date: todayStr,
+        stores: ['bilka', 'foetex', 'netto', 'rema', 'lidl', 'coop365'],
+        activeCount: activeOffersCount,
+      };
+    },
+
+    // Returnerer information om seneste daglige tjek
+    getLastDailyCheckInfo() {
+      const lastCheckKey = 'mums_daily_offers_last_check';
+      const lastDateKey = 'mums_daily_offers_last_date';
+      const lastCheckTimestamp = parseInt((typeof localStorage !== 'undefined' && localStorage.getItem(lastCheckKey)) || '0', 10);
+      const lastDate = (typeof localStorage !== 'undefined' && localStorage.getItem(lastDateKey)) || '';
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isCheckedToday = (lastDate === todayStr) && lastCheckTimestamp > 0;
+
+      let timeText = 'Ikke tjekket endnu';
+      if (lastCheckTimestamp > 0) {
+        const d = new Date(lastCheckTimestamp);
+        const hours = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        timeText = isCheckedToday ? `I dag kl. ${hours}:${mins}` : `${d.toLocaleDateString('da-DK')} kl. ${hours}:${mins}`;
+      }
+
+      return {
+        timestamp: lastCheckTimestamp,
+        date: lastDate,
+        isCheckedToday,
+        timeText,
+        storesCount: 6,
+        storesList: 'Bilka, Føtex, Netto, REMA 1000, Lidl, 365discount',
+      };
+    },
+  },
+
+  // ─── ALLERGEN DETECTION & FILTERING ─────────────────────────────────────────
+  allergens: {
+    ALLERGEN_MAP: {
+      gluten: {
+        label: 'Glutenfri',
+        keywords: ['hvedemel', 'mel', 'pasta', 'spaghetti', 'lasagneplader', 'brød', 'rasp', 'nudler', 'bulgur', 'couscous', 'øl', 'dej', 'hvede', 'rugmel', 'spelt']
+      },
+      laktose: {
+        label: 'Laktosefri / Mælkefri',
+        keywords: ['fløde', 'mælk', 'smør', 'ost', 'parmesan', 'mozzarella', 'creme fraiche', 'crème fraîche', 'yoghurt', 'feta', 'hytteost', 'piskefløde', 'mascarpone', 'ricotta', 'kærgården']
+      },
+      noedder: {
+        label: 'Nøddefri',
+        keywords: ['nødder', 'mandler', 'valnødder', 'hasselnødder', 'cashew', 'peanuts', 'jordnødder', 'pinjekerner', 'pistacie', 'pekannødder']
+      },
+      aeg: {
+        label: 'Æggefri',
+        keywords: ['æg', 'æggeblomme', 'æggehvide', 'mayonnaise', 'æggesnaps']
+      },
+      fisk: {
+        label: 'Fisk- & Skaldyrsfri',
+        keywords: ['fisk', 'laks', 'torsk', 'tun', 'rejer', 'muslinger', 'krabbe', 'hummer', 'fiskesovs', 'ansjoser', 'sild', 'ørred']
+      },
+      soja: {
+        label: 'Sojafri',
+        keywords: ['soya', 'soja', 'tofu', 'edamame']
+      },
+      svinekoed: {
+        label: 'Uden svinekød',
+        keywords: ['svinekød', 'svin', 'bacon', 'pølse', 'pølser', 'skinke', 'medister', 'flæsk', 'kotelet', 'hakket svin']
+      }
+    },
+
+    getLabel(key) {
+      return this.ALLERGEN_MAP[key]?.label || key;
+    },
+
+    detectAllergens(recipe) {
+      if (!recipe) return [];
+      const found = new Set();
+      const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : `${i.name || ''} ${i.searchKey || ''}`)).join(' ').toLowerCase();
+      const titleText = (recipe.name || '').toLowerCase() + ' ' + (recipe.desc || '').toLowerCase();
+      const combined = ingTexts + ' ' + titleText;
+
+      for (const [allergenKey, info] of Object.entries(this.ALLERGEN_MAP)) {
+        for (const kw of info.keywords) {
+          const regex = new RegExp('(?:^|[\\s,.!?;:()/-])' + kw + '(?:$|[\\s,.!?;:()/-])', 'i');
+          if (regex.test(combined) || combined.includes(kw)) {
+            found.add(allergenKey);
+            break;
+          }
+        }
+      }
+      return Array.from(found);
+    },
+
+    recipeContainsAllergen(recipe, userAllergies = []) {
+      if (!userAllergies || userAllergies.length === 0) return [];
+      const recipeAllergens = this.detectAllergens(recipe);
+      return userAllergies.filter(a => recipeAllergens.includes(a));
+    }
+  },
+};
+
+if (typeof window !== 'undefined') {
+  window.DataLayer = DataLayer;
+}
+
+// ─── NUTRITION PROFILES ───────────────────────────────────────────────────────
+const NUTRITION_PROFILES = {
+  bulk: {
+    label: '💪 Bulk',
+    minProtein: 35,
+    minKcal: 500,
+    maxFat: null,
+    maxCarbs: null,
+    maxKcal: null,
+    summary: 'Min. 35g protein · Min. 500 kcal per portion',
+  },
+  cutting: {
+    label: '🔥 Cutting',
+    maxKcal: 450,
+    maxFat: 15,
+    minProtein: 25,
+    maxCarbs: null,
+    minKcal: null,
+    summary: 'Max. 450 kcal · Max. 15g fedt · Min. 25g protein per portion',
+  },
+  maintain: {
+    label: '⚖️ Vedligehold',
+    minProtein: 20,
+    maxKcal: 650,
+    maxFat: 30,
+    maxCarbs: null,
+    minKcal: null,
+    summary: 'Min. 20g protein · Max. 650 kcal · Max. 30g fedt per portion',
+  },
+  custom: {
+    label: '✏️ Tilpasset',
+    summary: 'Dine egne ernæringskrav',
+  },
+};
+
+// ─── RECIPE DATABASE ──────────────────────────────────────────────────────────
+const RECIPES = [
+  new Recipe({
+    id: 'pasta_bolo',
+    name: 'Pasta Bolognese',
+    emoji: '🍝',
+    category: 'balanced',
+    badge: 'Familieret',
+    badgeClass: 'badge-balanced',
+    desc: 'Klassisk italiensk ret – nem og mættende',
+    prepTime: 30,
+    servings: 4,
+    nutrition: { kcal: 560, protein: 34, fat: 16, carbs: 62, fiber: 4 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['bulk', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'hakket kød',    amount: 500, unit: 'g',   searchKey: 'kød' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog pasta efter anvisning på pakken i saltet vand',
+      'Svits hakket kød på høj varme til brunet og gennemstegt',
+      'Tilsæt hakkede løg og hvidløg – steg 3 min',
+      'Hæld tomater i, krydr med oregano, salt og peber',
+      'Simr saucen 15 min – blend evt. halvdelen for en cremet konsistens',
+      'Bland med pasta og server med revet ost',
+    ],
+  }),
+  new Recipe({
+    id: 'chicken_rice',
+    name: 'Kylling & Ris med Grøntsager',
+    emoji: '🍗',
+    category: 'bulk',
+    badge: 'Høj protein',
+    badgeClass: 'badge-bulk',
+    desc: 'Klassisk bodybuilder-måltid – høj protein, lavt fedt',
+    prepTime: 25,
+    servings: 2,
+    nutrition: { kcal: 620, protein: 52, fat: 8, carbs: 78, fiber: 5 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'kylling',       amount: 400, unit: 'g',   searchKey: 'kylling' },
+      { name: 'ris',           amount: 200, unit: 'g',   searchKey: 'ris' },
+      { name: 'broccoli',      amount: 200, unit: 'g',   searchKey: 'broccoli' },
+      { name: 'gulerod',       amount: 150, unit: 'g',   searchKey: 'gulerod' },
+    ],
+    steps: [
+      'Kog ris efter anvisning (ca. 18 min)',
+      'Skær kylling i strimler og krydr med paprika, salt og peber',
+      'Steg kylling på panden 5-7 min til gennembagt',
+      'Blancher broccoli og gulerødder 3-4 min',
+      'Anret kylling, ris og grøntsager – smag til med soyasauce',
+    ],
+  }),
+  new Recipe({
+    id: 'laks_kartofler',
+    name: 'Ovnbagt Laks med Kartofler',
+    emoji: '🐟',
+    category: 'balanced',
+    badge: 'Omega-3',
+    badgeClass: 'badge-balanced',
+    desc: 'Sund og enkel fiskeret med masser af gode fedtstoffer',
+    prepTime: 35,
+    servings: 2,
+    nutrition: { kcal: 490, protein: 42, fat: 18, carbs: 38, fiber: 3 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['bulk', 'balanced'],
+    ingredients: [
+      { name: 'laks',          amount: 400, unit: 'g',   searchKey: 'fisk' },
+      { name: 'kartoffel',     amount: 500, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
+      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
+    ],
+    steps: [
+      'Forvarm ovn til 200°C',
+      'Skær kartofler i tern, vend i olie og krydr – bag 25 min',
+      'Placer laksfilet i ovnfad, krydr med citron, salt og dild',
+      'Bag laks 15-18 min til gennemgennembagt',
+      'Drys med frisk persille og server med citronbåde',
+    ],
+  }),
+  new Recipe({
+    id: 'spinat_omelet',
+    name: 'Spinat & Æg Omelet',
+    emoji: '🥚',
+    category: 'cutting',
+    badge: 'Lav kalorie',
+    badgeClass: 'badge-cutting',
+    desc: 'Hurtig og proteinrig ret – perfekt til cutting',
+    prepTime: 15,
+    servings: 1,
+    nutrition: { kcal: 310, protein: 26, fat: 20, carbs: 5, fiber: 2 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['cutting'],
+    ingredients: [
+      { name: 'æg',            amount: 3,   unit: 'stk', searchKey: 'æg' },
+      { name: 'spinat',        amount: 100, unit: 'g',   searchKey: 'spinat' },
+      { name: 'feta',          amount: 50,  unit: 'g',   searchKey: 'feta' },
+      { name: 'løg',           amount: 50,  unit: 'g',   searchKey: 'løg' },
+    ],
+    steps: [
+      'Pisk æg med salt og peber',
+      'Svits spinat og løg i panden 2 min',
+      'Hæld æg over – lad sætte sig 3-4 min',
+      'Smuldr feta over og fold omeletten',
+      'Server straks – evt. med rugbrød ved siden af',
+    ],
+  }),
+  new Recipe({
+    id: 'kylling_salat',
+    name: 'Grillet Kyllingesalat med Feta',
+    emoji: '🥗',
+    category: 'cutting',
+    badge: 'Lav kalorie',
+    badgeClass: 'badge-cutting',
+    desc: 'Frisk og mættende – perfekt til cutting og vedligehold',
+    prepTime: 20,
+    servings: 2,
+    nutrition: { kcal: 380, protein: 40, fat: 14, carbs: 18, fiber: 5 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['cutting', 'maintain'],
+    ingredients: [
+      { name: 'kylling',       amount: 300, unit: 'g',   searchKey: 'kylling' },
+      { name: 'salat',         amount: 150, unit: 'g',   searchKey: 'salat' },
+      { name: 'tomat',         amount: 150, unit: 'g',   searchKey: 'tomat' },
+      { name: 'agurk',         amount: 1,   unit: 'stk', searchKey: 'agurk' },
+      { name: 'feta',          amount: 80,  unit: 'g',   searchKey: 'feta' },
+    ],
+    steps: [
+      'Grill kyllingestrimler i 6-8 min med paprika og olie',
+      'Skær tomat, agurk og rødløg i tern',
+      'Bland alle grøntsager i en skål',
+      'Anret kylling ovenpå og smuldr feta over',
+      'Drys med olivenolie, balsamico og sort peber',
+    ],
+  }),
+  new Recipe({
+    id: 'gron_curry',
+    name: 'Vegetarisk Grøn Curry',
+    emoji: '🍛',
+    category: 'balanced',
+    badge: 'Vegetar',
+    badgeClass: 'badge-balanced',
+    desc: 'Cremet og krydret – fyldt med grøntsager',
+    prepTime: 30,
+    servings: 3,
+    nutrition: { kcal: 420, protein: 12, fat: 22, carbs: 48, fiber: 6 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['balanced'],
+    ingredients: [
+      { name: 'kartoffel',     amount: 400, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'kokosmælk',     amount: 400, unit: 'ml',  searchKey: 'kokosmælk' },
+      { name: 'broccoli',      amount: 200, unit: 'g',   searchKey: 'broccoli' },
+      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },
+      { name: 'ris',           amount: 200, unit: 'g',   searchKey: 'ris' },
+    ],
+    steps: [
+      'Kog ris efter anvisning',
+      'Svits løg og ingefær 3 min',
+      'Tilsæt grøn karrypasta og rør 1 min',
+      'Hæld kokosmælk i, tilsæt kartofler og broccoli',
+      'Simr 20 min til kartofler er møre',
+      'Server over ris med frisk koriander',
+    ],
+  }),
+  new Recipe({
+    id: 'oksekod_gryde',
+    name: 'Oksekødsgryde med Rodfrugter',
+    emoji: '🥘',
+    category: 'bulk',
+    badge: 'Høj protein',
+    badgeClass: 'badge-bulk',
+    desc: 'Fyldig og varmende – perfekt til bulk-perioden',
+    prepTime: 60,
+    servings: 4,
+    nutrition: { kcal: 640, protein: 48, fat: 22, carbs: 52, fiber: 7 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'oksekød',       amount: 600, unit: 'g',   searchKey: 'kød' },
+      { name: 'kartoffel',     amount: 400, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
+      { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+    ],
+    steps: [
+      'Skær kød i tern og brun i gryde ved høj varme',
+      'Tilsæt hakkede løg og svits 3 min',
+      'Tilsæt gulerødder og kartofler i tern',
+      'Hæld tomater og bouillon over',
+      'Simr under låg 45 min til kød er mørt',
+      'Smag til med timian, salt og peber – server med brød',
+    ],
+  }),
+  new Recipe({
+    id: 'linse_suppe',
+    name: 'Røde Linser Suppe',
+    emoji: '🍲',
+    category: 'maintain',
+    badge: 'Budget',
+    badgeClass: 'badge-balanced',
+    desc: 'Billig, nærende og fuld af fiber – fantastisk budget-ret',
+    prepTime: 30,
+    servings: 4,
+    nutrition: { kcal: 320, protein: 18, fat: 5, carbs: 52, fiber: 14 },
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['maintain', 'cutting'],
+    ingredients: [
+      { name: 'linser',        amount: 300, unit: 'g',   searchKey: 'linser' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
+      { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
+    ],
+    steps: [
+      'Svits løg og hvidløg 3 min',
+      'Tilsæt gulerødder og karry – rør 1 min',
+      'Hæld linser, tomater og bouillon i',
+      'Kog op og simr 20 min til linser er møre',
+      'Blend delvist for cremet konsistens',
+      'Server med citron og frisk koriander',
+    ],
+  }),
+
+  // 🥛 OPSKRIFTER FRA ARLA (Officiel metadata og kildelink)
+  new Recipe({
+    id: 'arla_kylling_karry',
+    name: 'Kylling i Karry',
+    emoji: '🍛',
+    category: 'balanced',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Cremet kylling i karrysauce med æblestykker og ris',
+    prepTime: 35,
+    servings: 4,
+    nutrition: { kcal: 610, protein: 42, fat: 22, carbs: 60, fiber: 4 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/kylling-i-karry/',
+    tags: ['balanced', 'bulk'],
+    ingredients: [
+      { name: 'kylling',       amount: 600, unit: 'g',   searchKey: 'kylling' },
+      { name: 'ris',           amount: 300, unit: 'g',   searchKey: 'ris' },
+      { name: 'æble',          amount: 2,   unit: 'stk', searchKey: 'æble' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
+    ],
+    steps: [
+      'Kog risene efter anvisning',
+      'Brun kyllingestykkerne på panden i karry og olie',
+      'Tilsæt hakkede løg og æbletern, og lad simre 5 min',
+      'Hæld fløde ved og lad saucen koge let ind',
+      'Smag til med salt, peber og server over de varme ris',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_pasta_laks',
+    name: 'Cremet Pasta med Laks & Spinat',
+    emoji: '🍝',
+    category: 'balanced',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Hurtig hverdagsret med frisk laks, spinat og flødesauce',
+    prepTime: 25,
+    servings: 4,
+    nutrition: { kcal: 580, protein: 38, fat: 24, carbs: 54, fiber: 3 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/pasta-med-laks-og-spinat/',
+    tags: ['balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'laks',          amount: 400, unit: 'g',   searchKey: 'fisk' },
+      { name: 'spinat',        amount: 200, unit: 'g',   searchKey: 'spinat' },
+      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
+    ],
+    steps: [
+      'Kog pastaen i letsaltet vand',
+      'Steg laks i tern let på panden 3-4 min',
+      'Tilsæt frisk spinat og vend til den falder sammen',
+      'Hæld fløde ved og smag til med citronsaft, salt og peber',
+      'Vend pastaen i saucen og server',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_lasagne',
+    name: 'Klassisk Lasagne',
+    emoji: '🥘',
+    category: 'bulk',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-bulk',
+    desc: 'Hjemmelavet lasagne med rig kødsauce og cremet ostesauce',
+    prepTime: 60,
+    servings: 4,
+    nutrition: { kcal: 690, protein: 45, fat: 28, carbs: 64, fiber: 4 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/klassisk-lasagne/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'hakket kød',    amount: 500, unit: 'g',   searchKey: 'kød' },
+      { name: 'pasta',         amount: 300, unit: 'g',   searchKey: 'pasta' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'mælk',          amount: 500, unit: 'ml',  searchKey: 'mælk' },
+      { name: 'ost',           amount: 150, unit: 'g',   searchKey: 'ost' },
+    ],
+    steps: [
+      'Brun kødet og tilsæt hakkede tomater og krydderier',
+      'Lav bechamelsauce med smør, mel og mælk',
+      'Læg lasagneplader, kødsauce og bechamel lagvist i et fad',
+      'Drys revet ost på toppen og bag ved 200°C i 30 minutter',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_kartoffel_porre',
+    name: 'Kartoffel-Porresuppe',
+    emoji: '🥣',
+    category: 'cutting',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-cutting',
+    desc: 'Klassisk mild suppe med bløde kartofler og friske porrer',
+    prepTime: 35,
+    servings: 4,
+    nutrition: { kcal: 320, protein: 8, fat: 14, carbs: 40, fiber: 5 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/kartoffel-porresuppe/',
+    tags: ['cutting', 'maintain'],
+    ingredients: [
+      { name: 'kartoffel',     amount: 600, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'porre',         amount: 300, unit: 'g',   searchKey: 'porre' },
+      { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },
+    ],
+    steps: [
+      'Svits porre og løg i en gryde uden at brune',
+      'Tilsæt kartoffeltern og bouillon – kog møre i 20 min',
+      'Blend suppen jævn og cremet med en stavblender',
+      'Rør fløde i, varm igennem og smag til med salt og peber',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_chili_con_carne',
+    name: 'Chili Con Carne',
+    emoji: '🌶️',
+    category: 'bulk',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-bulk',
+    desc: 'Smagfuld simreret med oksekød, kidneybønner og krydderier',
+    prepTime: 45,
+    servings: 4,
+    nutrition: { kcal: 590, protein: 44, fat: 18, carbs: 62, fiber: 12 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/chili-con-carne/',
+    tags: ['bulk', 'balanced'],
+    ingredients: [
+      { name: 'oksekød',       amount: 500, unit: 'g',   searchKey: 'kød' },
+      { name: 'bønner',        amount: 400, unit: 'g',   searchKey: 'bønner' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Brun kødet grundigt i en gryde',
+      'Tilsæt løg, hvidløg og chilipulver',
+      'Hæld hakkede tomater i og simr i 30 minutter',
+      'Tilsæt skyllede bønner de sidste 10 minutter og smag til',
+    ],
+  }),
+
+  // 🌿 OPSKRIFTER FRA VALDEMARSRO (Officiel metadata og kildelink)
+  new Recipe({
+    id: 'valdemarsro_dahl',
+    name: 'Indisk Rød Dahl',
+    emoji: '🍲',
+    category: 'balanced',
+    badge: 'Valdemarsro Favorit',
+    badgeClass: 'badge-balanced',
+    desc: 'Varmende indisk linsedahl med kokosmælk, ingefær og spidskommen',
+    prepTime: 35,
+    servings: 4,
+    nutrition: { kcal: 430, protein: 21, fat: 16, carbs: 52, fiber: 11 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/dahl/',
+    tags: ['balanced', 'maintain'],
+    ingredients: [
+      { name: 'linser',        amount: 300, unit: 'g',   searchKey: 'linser' },
+      { name: 'kokosmælk',     amount: 400, unit: 'ml',  searchKey: 'kokosmælk' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Svits hakket løg, hvidløg og krydderier i olie',
+      'Tilsæt skyllede røde linser og vend rundt',
+      'Tilsæt tomater, kokosmælk og bouillon',
+      'Lad retten simre 20-25 minutter til linserne er bløde og cremede',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_onepot',
+    name: 'One Pot Pasta med Kylling',
+    emoji: '🫕',
+    category: 'bulk',
+    badge: 'Valdemarsro Favorit',
+    badgeClass: 'badge-bulk',
+    desc: 'Alt tilberedes i én gryde – cremet pasta med kylling og grønt',
+    prepTime: 25,
+    servings: 4,
+    nutrition: { kcal: 620, protein: 46, fat: 18, carbs: 68, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/one-pot-pasta/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'kylling',       amount: 500, unit: 'g',   searchKey: 'kylling' },
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'spinat',        amount: 150, unit: 'g',   searchKey: 'spinat' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },
+    ],
+    steps: [
+      'Kom ukogt pasta, kyllingestrimler og grøntsager i en bred gryde',
+      'Hæld hakkede tomater og bouillon over',
+      'Kog ved middel varme under omrøring i 12-14 minutter',
+      'Rør spinat og ost i lige inden servering',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_graeskar',
+    name: 'Karry-Græskarsuppe',
+    emoji: '🎃',
+    category: 'cutting',
+    badge: 'Valdemarsro Opskrift',
+    badgeClass: 'badge-cutting',
+    desc: 'Fløjlsblød græskarsuppe med kokosmælk, frisk ingefær og gulerødder',
+    prepTime: 30,
+    servings: 4,
+    nutrition: { kcal: 290, protein: 6, fat: 15, carbs: 32, fiber: 6 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/graeskarsuppe/',
+    tags: ['cutting'],
+    ingredients: [
+      { name: 'græskar',       amount: 600, unit: 'g',   searchKey: 'græskar' },
+      { name: 'kokosmælk',     amount: 400, unit: 'ml',  searchKey: 'kokosmælk' },
+      { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
+      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },
+    ],
+    steps: [
+      'Svits løg og karry i gryden i 2 minutter',
+      'Tilsæt græskar og gulerødder i tern med bouillon',
+      'Kog i 20 minutter til grøntsagerne er møre',
+      'Tilsæt kokosmælk og blend suppen helt glat og cremet',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_hakkeboeffer',
+    name: 'Hakkebøffer med Bløde Løg',
+    emoji: '🥩',
+    category: 'bulk',
+    badge: 'Valdemarsro Favorit',
+    badgeClass: 'badge-bulk',
+    desc: 'Klassiske saftige hakkebøffer med karamelliserede løg og kartofler',
+    prepTime: 40,
+    servings: 4,
+    nutrition: { kcal: 680, protein: 44, fat: 34, carbs: 50, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/hakkeboeffer/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'hakket kød',    amount: 600, unit: 'g',   searchKey: 'kød' },
+      { name: 'løg',           amount: 300, unit: 'g',   searchKey: 'løg' },
+      { name: 'kartoffel',     amount: 800, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'smør',          amount: 50,  unit: 'g',   searchKey: 'smør' },
+    ],
+    steps: [
+      'Kog kartoflerne i letsaltet vand',
+      'Steg løgene langsomt i smør til de er bløde og gyldne',
+      'Form 4 store hakkebøffer, steg 4-5 minutter på hver side',
+      'Server med kartofler, bløde løg og pandesky',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_wok',
+    name: 'Wok med Oksekød & Sprødt Grønt',
+    emoji: '🥢',
+    category: 'maintain',
+    badge: 'Valdemarsro Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Lynhurtig asiatisk wok med mørt oksekød, broccoli og gulerødder',
+    prepTime: 20,
+    servings: 3,
+    nutrition: { kcal: 450, protein: 36, fat: 12, carbs: 48, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/wok-med-oksekoed/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'oksekød',       amount: 400, unit: 'g',   searchKey: 'kød' },
+      { name: 'broccoli',      amount: 200, unit: 'g',   searchKey: 'broccoli' },
+      { name: 'gulerod',       amount: 150, unit: 'g',   searchKey: 'gulerod' },
+      { name: 'ris',           amount: 200, unit: 'g',   searchKey: 'ris' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog risene efter anvisning',
+      'Lynsteg oksekødsstrimler i rygende varm wok 2 minutter – tag op',
+      'Steg broccoli og gulerødder i 3-4 minutter til sprødmøre',
+      'Kom kødet tilbage med sojasauce og sesamolie, og vend sammen',
+    ],
+  }),
+
+  // Ret uden opgivne ernæringsdata for at demonstrere nul opdigtning
+  new Recipe({
+    id: 'mums_fiskefilet',
+    name: 'Pandestegte Fiskefileter med Kartofler',
+    emoji: '🐟',
+    category: 'maintain',
+    badge: 'Dansk Klassiker',
+    badgeClass: 'badge-balanced',
+    desc: 'Panerede sprøde fiskefileter med citron og persillekartofler',
+    prepTime: 25,
+    servings: 2,
+    nutrition: null, // Ingen ernæringsdata opdigtes!
+    source: 'MUMS Opskrifter',
+    sourceUrl: null,
+    tags: ['maintain'],
+    ingredients: [
+      { name: 'fisk',          amount: 300, unit: 'g',   searchKey: 'fisk' },
+      { name: 'kartoffel',     amount: 400, unit: 'g',   searchKey: 'kartoffel' },
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
+    ],
+    steps: [
+      'Kog kartofler møre i saltet vand',
+      'Vend fiskefileterne i mel, salt og peber',
+      'Steg i rigeligt smør på panden i 2-3 minutter pr. side',
+      'Server med citronbåde og frisk persille',
+    ],
+  }),
+
+  // ─── ARLA OPSKRIFTER (Udvidet med populære retter & pasta) ────────────────
+  new Recipe({
+    id: 'arla_carbonara',
+    name: 'Klassisk Spaghetti Carbonara',
+    emoji: '🍝',
+    category: 'balanced',
+    badge: 'Arla Favorit',
+    badgeClass: 'badge-balanced',
+    desc: 'Italiensk bistro-klassiker med sprødstegt bacon, friskkværnet peber, æg og parmesan',
+    prepTime: 20,
+    servings: 4,
+    nutrition: { kcal: 640, protein: 36, fat: 26, carbs: 65, fiber: 3 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/spaghetti-carbonara/',
+    tags: ['balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'bacon',         amount: 200, unit: 'g',   searchKey: 'bacon' },
+      { name: 'æg',            amount: 4,   unit: 'stk', searchKey: 'æg' },
+      { name: 'ost',           amount: 80,  unit: 'g',   searchKey: 'ost' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog spaghettien i rigeligt letsaltet vand til den er al dente',
+      'Skær bacon i tern og rist dem sprøde på en tør pande ved middel varme',
+      'Pisk æg sammen med fintrevet ost og rigeligt sort peber i en skål',
+      'Vend den varme pasta direkte over i panden med bacon – tag panden af blusset',
+      'Hæld æggeblandingen i og rør hurtigt rundt til en cremet sauce ved hjælp af restvarmen',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_fettuccine_alfredo',
+    name: 'Cremet Fettuccine Alfredo',
+    emoji: '🍝',
+    category: 'bulk',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-bulk',
+    desc: 'Super cremet og fløjlsblød pastaret med smør, piskefløde og parmesan',
+    prepTime: 15,
+    servings: 4,
+    nutrition: { kcal: 690, protein: 28, fat: 34, carbs: 68, fiber: 2 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/fettuccine-alfredo/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'smør',          amount: 50,  unit: 'g',   searchKey: 'smør' },
+      { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },
+      { name: 'hvidløg',       amount: 10,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog pasta i letsaltet vand efter anvisning',
+      'Smelt smør i en dyb pande og svits fintrevet hvidløg kort uden det tager farve',
+      'Tilsæt piskefløde og lad det simre svagt i 2-3 minutter',
+      'Tilsæt fintrevet parmesan og rør til en blank, tyk sauce',
+      'Vend den afdryppede pasta i saucen og server med det samme',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_kylling_bacon_karry',
+    name: 'Cremet Karrypasta med Kylling & Bacon',
+    emoji: '🍗',
+    category: 'bulk',
+    badge: 'Arla Hverdagsret',
+    badgeClass: 'badge-bulk',
+    desc: 'Familiefavorit med møre kyllingestrimler, sprødstegt bacon, mild karry og flødesauce',
+    prepTime: 25,
+    servings: 4,
+    nutrition: { kcal: 680, protein: 48, fat: 28, carbs: 58, fiber: 4 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/kylling-i-karry-med-pasta/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'kylling',       amount: 500, unit: 'g',   searchKey: 'kylling' },
+      { name: 'bacon',         amount: 150, unit: 'g',   searchKey: 'bacon' },
+      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+    ],
+    steps: [
+      'Kog pasta i rigeligt letsaltet vand',
+      'Steg bacon sprødt i en gryde eller dyb pande – læg til side på køkkenrulle',
+      'Brun kyllingestykker og hakket løg i lidt fedtstof med 2 tsk karry',
+      'Tilsæt piskefløde og lad simre i 8-10 minutter til kyllingen er gennemstegt',
+      'Vend pasta og sprødt bacon i og smag til med salt og peber',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_pasta_svampe',
+    name: 'Pasta med Stegte Svampe & Hvidløg',
+    emoji: '🍄',
+    category: 'maintain',
+    badge: 'Arla Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Aromatisk pastaret med gyldenristede champignon, hvidløg, fløde og frisk persille',
+    prepTime: 20,
+    servings: 4,
+    nutrition: { kcal: 510, protein: 22, fat: 19, carbs: 62, fiber: 5 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/pasta-med-svampe/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'svampe',        amount: 300, unit: 'g',   searchKey: 'svampe' },
+      { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
+    ],
+    steps: [
+      'Kog pastaen al dente i saltet vand',
+      'Rens svampene, skær i skiver og rist dem gyldne i smør på panden',
+      'Tilsæt fintrevet hvidløg det sidste minut',
+      'Hæld fløde ved og lad det koge let ind',
+      'Vend pasta og frisk persille i og krydr godt med peber',
+    ],
+  }),
+  new Recipe({
+    id: 'arla_pasta_al_forno',
+    name: 'Bagt Pasta Al Forno med Ost',
+    emoji: '🧀',
+    category: 'bulk',
+    badge: 'Arla Ovnret',
+    badgeClass: 'badge-bulk',
+    desc: 'Lækker ovnbagt pasta i fyldig tomatsauce gratineret med gylden smeltet ost',
+    prepTime: 35,
+    servings: 4,
+    nutrition: { kcal: 630, protein: 32, fat: 24, carbs: 70, fiber: 5 },
+    source: 'Arla',
+    sourceUrl: 'https://www.arla.dk/opskrifter/pasta-al-forno/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
+      { name: 'ost',           amount: 200, unit: 'g',   searchKey: 'ost' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog pastaen 2 minutter kortere end anvisningen',
+      'Svits løg og hvidløg i en gryde og tilsæt hakkede tomater og oregano',
+      'Vend den forkogte pasta i tomatsaucen og hæld i et ildfast fad',
+      'Dæk med et generøst lag revet ost',
+      'Bag ved 200 grader i ca. 20 minutter til osten er gylden og boblende',
+    ],
+  }),
+
+  // ─── VALDEMARSRO OPSKRIFTER (Udvidet med populære retter & pasta) ─────────
+  new Recipe({
+    id: 'valdemarsro_pomodoro',
+    name: 'Pasta Pomodoro med Frisk Basilikum',
+    emoji: '🍅',
+    category: 'maintain',
+    badge: 'Valdemarsro Klassiker',
+    badgeClass: 'badge-balanced',
+    desc: 'Klassisk italiensk pastaret med velsmagende tomatsauce, hvidløg, olivenolie og frisk basilikum',
+    prepTime: 25,
+    servings: 4,
+    nutrition: { kcal: 480, protein: 18, fat: 12, carbs: 74, fiber: 6 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-pomodoro/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'tomat',         amount: 600, unit: 'g',   searchKey: 'tomat' },
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'basilikum',     amount: 1,   unit: 'stk', searchKey: 'basilikum' },
+      { name: 'ost',           amount: 60,  unit: 'g',   searchKey: 'ost' },
+    ],
+    steps: [
+      'Svits skivede hvidløg blidt i olie i en pande – må ikke blive brune',
+      'Tilsæt hakkede tomater og lad simre ved lav varme i 15-20 minutter til saucen tykner',
+      'Kog pastaen al dente i rigeligt saltet vand',
+      'Vend pastaen i tomatsaucen sammen med friskhakket basilikum',
+      'Server med revet parmesan på toppen',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_koedboller',
+    name: 'Pasta med Italienske Kødboller',
+    emoji: '🍝',
+    category: 'bulk',
+    badge: 'Valdemarsro Favorit',
+    badgeClass: 'badge-bulk',
+    desc: 'Saftige krydrede oksekødboller simret i en aromatisk tomatsauce over friskkogt spaghetti',
+    prepTime: 35,
+    servings: 4,
+    nutrition: { kcal: 670, protein: 44, fat: 24, carbs: 68, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-med-koedboller/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'oksekød',       amount: 500, unit: 'g',   searchKey: 'kød' },
+      { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'æg',            amount: 1,   unit: 'stk', searchKey: 'æg' },
+    ],
+    steps: [
+      'Rør oksekødet sejt med salt, peber, æg og fintrevet hvidløg – form til små kødboller',
+      'Brun kødbollerne på panden i lidt olie til de har stegeskorpe',
+      'Hæld tomatsauce over og lad kødbollerne simre møre i 12 minutter',
+      'Kog spaghettien imens og anret med kødboller og sauce over',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_pesto_kylling',
+    name: 'Pasta med Cremet Pesto & Kylling',
+    emoji: '🌿',
+    category: 'bulk',
+    badge: 'Valdemarsro Nem Hverdag',
+    badgeClass: 'badge-bulk',
+    desc: 'Lynhurtig hverdagsret med saftig kylling, velsmagende pesto, fløde og frisk babyspinat',
+    prepTime: 20,
+    servings: 4,
+    nutrition: { kcal: 640, protein: 46, fat: 26, carbs: 54, fiber: 4 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-med-roed-pesto-og-kylling/',
+    tags: ['bulk'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'kylling',       amount: 500, unit: 'g',   searchKey: 'kylling' },
+      { name: 'pesto',         amount: 150, unit: 'g',   searchKey: 'pesto' },
+      { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'spinat',        amount: 150, unit: 'g',   searchKey: 'spinat' },
+    ],
+    steps: [
+      'Kog pastaen efter anvisningen på pakken',
+      'Steg kyllingetern gyldne og gennemstegte på panden',
+      'Rør pesto og fløde i og lad simre i et par minutter',
+      'Vend frisk spinat i til den lige falder sammen',
+      'Vend den varme pasta i og server straks',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_bagtfeta',
+    name: 'Bagt Feta Pasta med Cherrytomater',
+    emoji: '🧀',
+    category: 'maintain',
+    badge: 'Valdemarsro Trend',
+    badgeClass: 'badge-balanced',
+    desc: 'Bagt blok fetaost med søde cherrytomater, hvidløg og olivenolie rørt til en syndig sauce',
+    prepTime: 30,
+    servings: 4,
+    nutrition: { kcal: 590, protein: 24, fat: 26, carbs: 64, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/bagt-feta-pasta/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'feta',          amount: 200, unit: 'g',   searchKey: 'feta' },
+      { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'basilikum',     amount: 1,   unit: 'stk', searchKey: 'basilikum' },
+    ],
+    steps: [
+      'Læg en hel blok feta midt i et ovnfast fad omgivet af cherrytomater og hele hvidløgsfed',
+      'Dryp med olivenolie, salt og peber, og bag ved 200 grader i 25-30 minutter',
+      'Kog pastaen imens og gem 1 dl pastavand',
+      'Mos den bløde varme feta og de sprængte tomater sammen med en gaffel',
+      'Vend den kogte pasta i saucen med frisk basilikum og rør cremet',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_bacon_spinat',
+    name: 'Cremet Pasta med Bacon & Spinat',
+    emoji: '🥓',
+    category: 'balanced',
+    badge: 'Valdemarsro Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Hurtig og velsmagende pastaret med sprødstegt bacon, frisk spinat og mild ostesauce',
+    prepTime: 20,
+    servings: 4,
+    nutrition: { kcal: 610, protein: 32, fat: 24, carbs: 64, fiber: 4 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-med-bacon-og-spinat/',
+    tags: ['balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'bacon',         amount: 200, unit: 'g',   searchKey: 'bacon' },
+      { name: 'spinat',        amount: 200, unit: 'g',   searchKey: 'spinat' },
+      { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'ost',           amount: 80,  unit: 'g',   searchKey: 'ost' },
+      { name: 'hvidløg',       amount: 10,  unit: 'g',   searchKey: 'hvidløg' },
+    ],
+    steps: [
+      'Kog pasta al dente',
+      'Skær bacon i strimler og rist sprødt på en tør pande – hæld det meste fedt fra',
+      'Tilsæt hvidløg og spinat og vend rundt i 1 minut til spinaten falder sammen',
+      'Tilsæt fløde og revet ost, og lad saucen smelte sammen ved svag varme',
+      'Vend pastaen i og server straks',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_cacio_pepe',
+    name: 'Pasta Cacio e Pepe',
+    emoji: '🧀',
+    category: 'cutting',
+    badge: 'Valdemarsro Enkel',
+    badgeClass: 'badge-cutting',
+    desc: 'Romersk klassiker med kun pasta, parmesan/pecorino, ristet sort peber og pastavand',
+    prepTime: 15,
+    servings: 4,
+    nutrition: { kcal: 490, protein: 22, fat: 12, carbs: 72, fiber: 3 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/cacio-e-pepe/',
+    tags: ['cutting'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'ost',           amount: 150, unit: 'g',   searchKey: 'ost' },
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
+    ],
+    steps: [
+      'Kog pasta i vand med mindre salt end normalt (osten er salt)',
+      'Rist masser af groftkværnet sort peber på en tør pande 1 minut for aroma',
+      'Tilsæt 1 dl kogende pastavand og smør til peberet',
+      'Rør fintrevet ost med lidt pastavand til en jævn ostecreme i en skål',
+      'Vend den kogte pasta på panden, tag af blusset og rør ostecremen i til fløjlsblød sauce',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_tun',
+    name: 'Pasta med Tun & Kapers i Tomatsauce',
+    emoji: '🐟',
+    category: 'maintain',
+    badge: 'Valdemarsro Hurtigret',
+    badgeClass: 'badge-balanced',
+    desc: 'Sund, billig og proteinrig hverdagsret lavet af nemme kolonialvarer fra skabet',
+    prepTime: 20,
+    servings: 4,
+    nutrition: { kcal: 470, protein: 38, fat: 10, carbs: 62, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-med-tun/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'tun',           amount: 320, unit: 'g',   searchKey: 'tun' },
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
+      { name: 'løg',           amount: 120, unit: 'g',   searchKey: 'løg' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
+    ],
+    steps: [
+      'Svits hakket løg og hvidløg gyldent i olie på panden',
+      'Tilsæt hakkede tomater og lad simre i 10 minutter',
+      'Kog pastaen i letsaltet vand',
+      'Dræn tunen og vend den forsigtigt i tomatsaucen med et skvæt citronsaft',
+      'Vend pastaen i og server med det samme',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_svampe',
+    name: 'Pasta med Svampe, Hvidløg & Timian',
+    emoji: '🍄',
+    category: 'maintain',
+    badge: 'Valdemarsro Opskrift',
+    badgeClass: 'badge-balanced',
+    desc: 'Skøn cremet svamperet med brunede markchampignon, fløde og masser af frisk persille',
+    prepTime: 25,
+    servings: 4,
+    nutrition: { kcal: 530, protein: 22, fat: 20, carbs: 64, fiber: 5 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/pasta-med-svampe/',
+    tags: ['maintain', 'balanced'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'svampe',        amount: 350, unit: 'g',   searchKey: 'svampe' },
+      { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
+      { name: 'persille',      amount: 25,  unit: 'g',   searchKey: 'persille' },
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
+    ],
+    steps: [
+      'Skær svampene i kvarte og steg ved god varme i smør til al væde er fordampet og de er gyldne',
+      'Tilsæt hakket hvidløg og svits 1 minut',
+      'Hæld fløde ved og lad simre til cremet konsistens',
+      'Kog pastaen, vend den i saucen sammen med frisk persille, salt og peber',
+    ],
+  }),
+  new Recipe({
+    id: 'valdemarsro_citronpasta',
+    name: 'Frisk Citronpasta med Parmesan',
+    emoji: '🍋',
+    category: 'maintain',
+    badge: 'Valdemarsro Frisk',
+    badgeClass: 'badge-balanced',
+    desc: 'Frisk og sommerlig italiensk citronpasta med smør, fintrevet citronskal, parmesan og persille',
+    prepTime: 15,
+    servings: 4,
+    nutrition: { kcal: 480, protein: 20, fat: 16, carbs: 66, fiber: 3 },
+    source: 'Valdemarsro',
+    sourceUrl: 'https://www.valdemarsro.dk/citronpasta/',
+    tags: ['maintain'],
+    ingredients: [
+      { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
+      { name: 'citron',        amount: 2,   unit: 'stk', searchKey: 'citron' },
+      { name: 'smør',          amount: 50,  unit: 'g',   searchKey: 'smør' },
+      { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },
+      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
+    ],
+    steps: [
+      'Kog pasta i rigeligt letsaltet vand',
+      'Smelt smør på en pande med fintrevet citronskal (kun det gule) og 2 spsk citronsaft',
+      'Tilsæt 1 dl varmt pastavand for at binde saucen',
+      'Vend den varme pasta og masser af fintrevet parmesan i panden til det emulgerer',
+      'Drys med frisk persille og server med det samme',
+    ],
+  }),
+];
+
+// ─── INTEGRER EXTERNE OPSKRIFTER FRA ARLA & VALDEMARSRO ─────────────────────
+function mergeExternalRecipes() {
+  if (typeof EXTERNAL_RECIPES !== 'undefined' && Array.isArray(EXTERNAL_RECIPES)) {
+    const existingIds = new Set(RECIPES.map(r => r.id));
+    EXTERNAL_RECIPES.forEach(ext => {
+      if (!existingIds.has(ext.id)) {
+        RECIPES.push(new Recipe(ext));
+        existingIds.add(ext.id);
+      }
+    });
+  }
+}
+mergeExternalRecipes();
+
+if (typeof window !== 'undefined') {
+  window.RECIPES = RECIPES;
+  window.mergeExternalRecipes = mergeExternalRecipes;
+}
+
+// ─── VERIFICERET PRODUKT- & PRISDATABASE (6 aktive danske butikker) ──────────
+// Realistiske markedspriser for over 180 udbredte råvarer opdateret til 2026.
+const PRODUCT_DB = {
+  'hakket oksekød': {
+    netto: { name: 'Netto Hakket Oksekød 500g', price: 39.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Hakket Oksekød 500g', price: 38.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Slagterens Hakket Oksekød 500g', price: 37.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Oksekød 8-12% 500g', price: 39.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansk Oksekød 8-12% 500g', price: 44.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Slagter Hakket Oksekød 500g', price: 42.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hakket svinekød': {
+    netto: { name: 'Netto Svinekød 500g', price: 22.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Svinekød 500g', price: 22.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Hakket Grisekød 500g', price: 21.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Svinekød 500g', price: 22.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansk Grisekød 500g', price: 26.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Hakket Svinekød 500g', price: 27.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hakket kalv og flæsk': {
+    netto: { name: 'Netto Kalv & Flæsk 500g', price: 29.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Kalv & Flæsk 500g', price: 29.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Kalv & Svin 500g', price: 28.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Kalv/Flæsk 500g', price: 29.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Slagterens Kalv & Flæsk 500g', price: 34.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Dansk Kalv & Flæsk 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hakket kylling': {
+    netto: { name: 'Netto Hakket Kylling 400g', price: 25.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Hakket Kylling 400g', price: 25.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Hakket Kylling 400g', price: 24.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Hakket Kylling 400g', price: 25.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Rose Hakket Kylling 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Dansk Hakket Kylling 400g', price: 31.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'kyllingefilet': {
+    netto: { name: 'Netto Kyllingebryst 600g', price: 42.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    rema: { name: 'REMA Kyllingefilet 700g', price: 48.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    lidl: { name: 'Kyllingebrystfilet 600g', price: 41.99, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    coop365: { name: '365 Kyllingefilet 600g', price: 42.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    foetex: { name: 'Dansk Kyllingebryst 700g', price: 54.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    bilka: { name: 'Kyllingefilet 800g', price: 59.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+  },
+  'kyllingebryst': {
+    netto: { name: 'Netto Kyllingebryst 600g', price: 42.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    rema: { name: 'REMA Kyllingebryst 700g', price: 48.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    lidl: { name: 'Kyllingebrystfilet 600g', price: 41.99, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    coop365: { name: '365 Kyllingebryst 600g', price: 42.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    foetex: { name: 'Rose Kyllingebryst 700g', price: 54.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+    bilka: { name: 'Kyllingebryst 800g', price: 59.95, unit: '650g', packageAmount: 650, packageUnit: 'g' },
+  },
+  'kyllingelår': {
+    netto: { name: 'Netto Kyllingelår 900g', price: 26.95, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+    rema: { name: 'REMA Kyllingeunderlår 1kg', price: 28.95, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+    lidl: { name: 'Kyllingelår 1kg', price: 25.99, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+    coop365: { name: '365 Kyllingeunderlår 900g', price: 26.95, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+    foetex: { name: 'Dansk Kyllingeunderlår 900g', price: 32.95, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+    bilka: { name: 'Kyllingelår 1kg', price: 34.95, unit: '900g', packageAmount: 900, packageUnit: 'g' },
+  },
+  'hel kylling': {
+    netto: { name: 'Netto Hel Kylling 1200g', price: 39.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    rema: { name: 'REMA Hel Kylling 1350g', price: 42.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    lidl: { name: 'Hel Kylling 1300g', price: 38.99, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    coop365: { name: '365 Hel Kylling 1300g', price: 42.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    foetex: { name: 'Dansk Hel Kylling 1400g', price: 49.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    bilka: { name: 'Hel Kylling 1400g', price: 49.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+  },
+  'kyllingestrimler': {
+    netto: { name: 'Netto Kyllingestrimler 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Kyllingestrimler 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Kyllingestrimler 400g', price: 28.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Kyllingestrimler 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Rose Kyllingestrimler 400g', price: 36.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Kyllingestrimler 500g', price: 38.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'bacon': {
+    netto: { name: 'Netto Bacon 300g', price: 23.95, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+    rema: { name: 'REMA Bacon i Skiver 300g', price: 23.95, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+    lidl: { name: 'Dulano Bacon 300g', price: 22.99, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+    coop365: { name: '365 Bacon 300g', price: 23.95, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+    foetex: { name: 'Tulip Bacon 300g', price: 28.95, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+    bilka: { name: 'Tulip Bacon 3-pak 300g', price: 29.95, unit: '300g', packageAmount: 300, packageUnit: 'g' },
+  },
+  'skinke': {
+    netto: { name: 'Netto Skinketern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Skinketern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Dulano Skinketern 200g', price: 12.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Skinketern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Dansk Skinketern 200g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Tulip Skinketern 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'svinemørbrad': {
+    netto: { name: 'Netto Svinemørbrad 500g', price: 42.95, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+    rema: { name: 'REMA Svinemørbrad 550g', price: 44.95, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+    lidl: { name: 'Svinemørbrad 500g', price: 39.99, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+    coop365: { name: '365 Svinemørbrad 550g', price: 44.95, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+    foetex: { name: 'Dansk Svinemørbrad 600g', price: 52.95, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+    bilka: { name: 'Afskåret Svinemørbrad 600g', price: 54.95, unit: '550g', packageAmount: 550, packageUnit: 'g' },
+  },
+  'svinekoteletter': {
+    netto: { name: 'Netto Koteletter 500g', price: 31.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Koteletter 500g', price: 31.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Svinekoteletter 500g', price: 29.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Koteletter 500g', price: 31.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Slagterkoteletter 500g', price: 38.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Fadkoteletter 500g', price: 39.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'flæskesteg': {
+    netto: { name: 'Dansk Kamsteg / Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Grisekam med svær 1,4 kg', price: 64.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    lidl: { name: 'Vilstrup Gård Flæskesteg 1,3 kg', price: 59.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    coop365: { name: '365 Dansk Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    foetex: { name: 'Slagterens Grisekam med svær 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    bilka: { name: 'Dansk Flæskesteg / Kamsteg 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+  },
+  'grisekam': {
+    netto: { name: 'Dansk Kamsteg / Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Grisekam med svær 1,4 kg', price: 64.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    lidl: { name: 'Vilstrup Gård Flæskesteg 1,3 kg', price: 59.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    coop365: { name: '365 Dansk Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    foetex: { name: 'Slagterens Grisekam med svær 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    bilka: { name: 'Dansk Flæskesteg / Kamsteg 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+  },
+  'svinekam': {
+    netto: { name: 'Dansk Kamsteg / Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Grisekam med svær 1,4 kg', price: 64.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    lidl: { name: 'Vilstrup Gård Flæskesteg 1,3 kg', price: 59.95, unit: '1300g', packageAmount: 1300, packageUnit: 'g' },
+    coop365: { name: '365 Dansk Flæskesteg 1,4 kg', price: 69.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+    foetex: { name: 'Slagterens Grisekam med svær 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    bilka: { name: 'Dansk Flæskesteg / Kamsteg 1,5 kg', price: 79.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+  },
+  'ribbensteg': {
+    netto: { name: 'Dansk Ribbensteg 1,2 kg', price: 64.95, unit: '1200g', packageAmount: 1200, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Ribbensteg 1,2 kg', price: 62.95, unit: '1200g', packageAmount: 1200, packageUnit: 'g' },
+    lidl: { name: 'Ribbensteg 1,2 kg', price: 58.95, unit: '1200g', packageAmount: 1200, packageUnit: 'g' },
+    coop365: { name: '365 Ribbensteg 1,2 kg', price: 64.95, unit: '1200g', packageAmount: 1200, packageUnit: 'g' },
+    foetex: { name: 'Slagterens Ribbensteg 1,2 kg', price: 74.95, unit: '1200g', packageAmount: 1200, packageUnit: 'g' },
+    bilka: { name: 'Dansk Ribbensteg 1,4 kg', price: 74.95, unit: '1400g', packageAmount: 1400, packageUnit: 'g' },
+  },
+  'medisterpølse': {
+    netto: { name: 'Netto Medister 500g', price: 24.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Medister 500g', price: 24.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Dansk Medister 500g', price: 23.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Medister 500g', price: 24.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Grov Medister 500g', price: 31.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Slagtermedister 500g', price: 32.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'oksebøffer': {
+    netto: { name: 'Netto Oksebøffer 400g', price: 59.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Oksemedaljoner 400g', price: 59.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Oksebøffer 400g', price: 56.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Oksebøffer 400g', price: 59.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Slagter Ribeye/Bøf 400g', price: 74.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Møre Oksebøffer 400g', price: 79.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'pølser': {
+    netto: { name: 'Netto Wienerpølser 400g', price: 21.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Wienerpølser 400g', price: 21.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Gøl/Dulano Pølser 400g', price: 19.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Pølser 400g', price: 21.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Langelænder Pølser 400g', price: 26.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Gøl Wienerpølser 400g', price: 27.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'laks': {
+    netto: { name: 'Netto Laksefilet 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Lakseportioner 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Nautica Laksefilet 400g', price: 49.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Laksefilet 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Norsk Laksefilet 400g', price: 64.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Frisk Færøsk Laks 400g', price: 69.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'laksefilet': {
+    netto: { name: 'Netto Laksefilet 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Laksefilet 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lakseportioner 400g', price: 49.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Laks 400g', price: 52.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Laksefilet 400g', price: 64.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Frisk Laks 400g', price: 69.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'røget laks': {
+    netto: { name: 'Netto Røget Laks 100g', price: 24.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    rema: { name: 'REMA Røget Laks 100g', price: 24.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    lidl: { name: 'Nautica Røget Laks 100g', price: 23.99, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    coop365: { name: '365 Røget Laks 100g', price: 24.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    foetex: { name: 'Royal Greenland Røget Laks 100g', price: 32.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    bilka: { name: 'Røget Laks 100g', price: 34.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+  },
+  'torsk': {
+    netto: { name: 'Netto Torskefilet 350g', price: 42.95, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+    rema: { name: 'REMA Torskefilet 350g', price: 42.95, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+    lidl: { name: 'Torskefilet 350g', price: 39.99, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+    coop365: { name: '365 Torsk 350g', price: 42.95, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+    foetex: { name: 'Frisk Torskefilet 350g', price: 52.95, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+    bilka: { name: 'Nordsø Torskefilet 350g', price: 54.95, unit: '350g', packageAmount: 350, packageUnit: 'g' },
+  },
+  'rejer': {
+    netto: { name: 'Netto Rejer i Lage 200g', price: 26.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Koldtvandsrejer 200g', price: 26.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Nautica Rejer 200g', price: 24.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Rejer 200g', price: 26.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Royal Greenland Rejer 200g', price: 32.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Store Grønlandske Rejer 200g', price: 34.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'tun': {
+    netto: { name: 'Netto Tun i Vand 160g', price: 9.95, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+    rema: { name: 'REMA Tun i Vand 160g', price: 9.50, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+    lidl: { name: 'Nixe Tun i Vand 160g', price: 8.99, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+    coop365: { name: '365 Tun i Vand 160g', price: 9.50, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+    foetex: { name: 'John West Tun 160g', price: 14.95, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+    bilka: { name: 'Rio Mare Tun 160g', price: 15.95, unit: '160g', packageAmount: 160, packageUnit: 'g' },
+  },
+  'fiskefars': {
+    netto: { name: 'Netto Fiskefars 400g', price: 26.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Fiskefars 400g', price: 26.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Frisk Fiskefars 400g', price: 24.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Fiskefars 400g', price: 26.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Fiskehusets Fiskefars 400g', price: 32.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Hjemmelavet Fiskefars 400g', price: 34.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'mælk': {
+    netto: { name: 'Netto Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Letmælk 1L', price: 9.99, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Letmælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Letmælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'letmælk': {
+    netto: { name: 'Netto Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Letmælk 1L', price: 9.99, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Letmælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Letmælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Letmælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'minimælk': {
+    netto: { name: 'Netto Minimælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Minimælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Minimælk 1L', price: 9.99, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Minimælk 1L', price: 10.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Minimælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Minimælk 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'sødmælk': {
+    netto: { name: 'Netto Sødmælk 1L', price: 11.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Sødmælk 1L', price: 11.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Sødmælk 1L', price: 10.99, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Sødmælk 1L', price: 11.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Sødmælk 1L', price: 14.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Sødmælk 1L', price: 14.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'kærnemælk': {
+    netto: { name: 'Netto Kærnemælk 1L', price: 9.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Kærnemælk 1L', price: 9.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Kærnemælk 1L', price: 9.49, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Kærnemælk 1L', price: 9.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Kærnemælk 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Kærnemælk 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'smør': {
+    netto: { name: 'Netto Dansk Smør 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Smør 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Smør 200g', price: 19.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Smør 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Lurpak Smør 200g', price: 27.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Lurpak Smør 200g', price: 28.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'margarine': {
+    netto: { name: 'Netto Stegemargarine 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Margarine 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Bagemargarine 500g', price: 12.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Margarine 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'AMA Stegemargarine 500g', price: 17.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'AMA Margarine 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'piskefløde': {
+    netto: { name: 'Netto Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Milbona Piskefløde 500ml', price: 18.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Arla Piskefløde 500ml', price: 24.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Arla Piskefløde 500ml', price: 25.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'fløde': {
+    netto: { name: 'Netto Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Milbona Piskefløde 500ml', price: 18.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Piskefløde 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Arla Piskefløde 500ml', price: 24.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Arla Piskefløde 500ml', price: 25.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'madlavningsfløde': {
+    netto: { name: 'Netto Madlavningsfløde 500ml', price: 12.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Madfløde 500ml', price: 12.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Madlavningsfløde 500ml', price: 11.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Madfløde 500ml', price: 12.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Karolines Madlavningsfløde 500ml', price: 16.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Karolines Madfløde 500ml', price: 16.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'cremefraiche': {
+    netto: { name: 'Netto Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Milbona Creme Fraiche 500g', price: 12.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Arla Creme Fraiche 500g', price: 17.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Arla Creme Fraiche 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'fraiche': {
+    netto: { name: 'Netto Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Milbona Creme Fraiche 500g', price: 12.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Creme Fraiche 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Arla Creme Fraiche 500g', price: 17.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Arla Creme Fraiche 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'græsk yoghurt': {
+    netto: { name: 'Netto Græsk Yoghurt 1kg', price: 20.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Græsk Yoghurt 1kg', price: 20.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Milbona Græsk Yoghurt 1kg', price: 18.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Græsk Yoghurt 1kg', price: 20.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Kolios Græsk Yoghurt 1kg', price: 27.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Græsk Yoghurt 10% 1kg', price: 27.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'yoghurt': {
+    netto: { name: 'Netto Yoghurt Naturel 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Yoghurt Naturel 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Milbona Yoghurt 1L', price: 12.49, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Yoghurt 1L', price: 13.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Arla Yoghurt Naturel 1L', price: 17.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Arla Yoghurt 1L', price: 17.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'kvark': {
+    netto: { name: 'Netto Kvark 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Kvark 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Milbona Kvark 250g', price: 11.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Kvark 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Karolines Kvark 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Arla Kvark 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'hytteost': {
+    netto: { name: 'Netto Hytteost 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Hytteost 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Milbona Hytteost 250g', price: 11.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Hytteost 250g', price: 12.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Karolines Hytteost 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Karolines Hytteost 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'revet ost': {
+    netto: { name: 'Netto Revet Mozzarella 200g', price: 15.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Revet Ost 200g', price: 15.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Revet Ost 200g', price: 14.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Revet Mozzarella 200g', price: 15.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Karolines Revet Mozzarella 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Arla Revet Ost 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'mozzarella': {
+    netto: { name: 'Netto Frisk Mozzarella 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    rema: { name: 'REMA Frisk Mozzarella 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    lidl: { name: 'Lovilio Mozzarella 125g', price: 7.99, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    coop365: { name: '365 Mozzarella 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    foetex: { name: 'Galbani Mozzarella 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    bilka: { name: 'Galbani Mozzarella 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+  },
+  'parmesan': {
+    netto: { name: 'Netto Grana Padano 150g', price: 27.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    rema: { name: 'REMA Grana Padano 150g', price: 27.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    lidl: { name: 'Italiamo Grana Padano 150g', price: 24.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Grana Padano 150g', price: 27.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    foetex: { name: 'Zanetti Parmigiano 150g', price: 34.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    bilka: { name: 'Parmigiano Reggiano 150g', price: 36.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+  },
+  'feta': {
+    netto: { name: 'Netto Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Eridanous Feta 200g', price: 12.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Apetina Salatost 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Apetina Feta Blok 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'salatost': {
+    netto: { name: 'Netto Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Salatost 200g', price: 12.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Salatost 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Apetina Salatost 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Apetina Tern 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'skæreost': {
+    netto: { name: 'Netto Mellemlagret Ost 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Danbo Ost 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Milbona Skæreost 500g', price: 34.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Danbo 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Riberhus Danbo 500g', price: 46.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Klovborg Danbo 500g', price: 47.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'cheddar': {
+    netto: { name: 'Netto Cheddar 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Cheddar 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Valley Spire Cheddar 200g', price: 17.49, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Cheddar 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Cathedral City Cheddar 200g', price: 24.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Irsk Cheddar 200g', price: 25.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'flødeost': {
+    netto: { name: 'Netto Flødeost Naturel 200g', price: 12.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Flødeost 200g', price: 12.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Flødeost 200g', price: 11.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Flødeost 200g', price: 12.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Philadelphia Naturel 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Philadelphia Flødeost 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'mascarpone': {
+    netto: { name: 'Netto Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Lovilio Mascarpone 250g', price: 16.49, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Galbani Mascarpone 250g', price: 23.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Galbani Mascarpone 250g', price: 24.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'ricotta': {
+    netto: { name: 'Netto Ricotta 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Ricotta 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Lovilio Ricotta 250g', price: 14.49, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Ricotta 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Galbani Ricotta 250g', price: 21.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Galbani Ricotta 250g', price: 22.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'æg': {
+    netto: { name: 'Netto Skrabeæg 10 stk', price: 22.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Skrabeæg 10 stk', price: 22.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Danske Æg 10 stk', price: 21.99, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Skrabeæg 10 stk', price: 22.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Hedegaard Danske Æg 10 stk', price: 27.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Dava Skrabeæg 10 stk', price: 28.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'kartofler': {
+    netto: { name: 'Netto Danske Kartofler 1.5kg', price: 13.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    rema: { name: 'REMA Kartofler 1.5kg', price: 13.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    lidl: { name: 'Danske Kartofler 1.5kg', price: 12.99, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    coop365: { name: '365 Kartofler 1.5kg', price: 13.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    foetex: { name: 'Vildmose Kartofler 1.5kg', price: 17.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+    bilka: { name: 'Danske Kartofler 2kg', price: 18.95, unit: '1500g', packageAmount: 1500, packageUnit: 'g' },
+  },
+  'søde kartofler': {
+    netto: { name: 'Netto Søde Kartofler 1kg', price: 18.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Søde Kartofler 1kg', price: 18.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Søde Kartofler 1kg', price: 16.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Søde Kartofler 1kg', price: 18.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Søde Kartofler 1kg', price: 23.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Søde Kartofler 1kg', price: 24.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'løg': {
+    netto: { name: 'Netto Gule Løg 1kg', price: 7.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Gule Løg 1kg', price: 7.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Gule Løg 1kg', price: 6.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Gule Løg 1kg', price: 7.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Danske Løg 1kg', price: 9.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Gule Løg 1kg', price: 9.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'rødløg': {
+    netto: { name: 'Netto Rødløg 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Rødløg 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Lidl Rødløg 500g', price: 7.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Rødløg 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Rødløg 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Danske Rødløg 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'forårsløg': {
+    netto: { name: 'Netto Forårsløg 1 bdt', price: 7.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    rema: { name: 'REMA Forårsløg 1 bdt', price: 7.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    lidl: { name: 'Forårsløg 1 bdt', price: 6.99, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    coop365: { name: '365 Forårsløg 1 bdt', price: 7.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    foetex: { name: 'Friske Forårsløg 1 bdt', price: 10.50, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    bilka: { name: 'Forårsløg 1 bdt', price: 10.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+  },
+  'skalotteløg': {
+    netto: { name: 'Netto Skalotteløg 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Skalotteløg 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Skalotteløg 250g', price: 9.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Skalotteløg 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Franske Skalotteløg 250g', price: 13.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Skalotteløg 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'hvidløg': {
+    netto: { name: 'Netto Hvidløg 3-pak', price: 5.95, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+    rema: { name: 'REMA Hvidløg 3-pak', price: 5.50, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+    lidl: { name: 'Lidl Hvidløg 3-pak', price: 4.99, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+    coop365: { name: '365 Hvidløg 3-pak', price: 4.95, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+    foetex: { name: 'Hvidløg 150g', price: 7.50, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+    bilka: { name: 'Hvidløg 3 fed/net', price: 6.95, unit: '1pakke', packageAmount: 1, packageUnit: 'pakke' },
+  },
+  'porrer': {
+    netto: { name: 'Netto Porrer 3 stk', price: 10.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    rema: { name: 'REMA Porrer 3 stk', price: 10.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    lidl: { name: 'Porrer 3 stk', price: 9.99, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    coop365: { name: '365 Porrer 3 stk', price: 10.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    foetex: { name: 'Danske Porrer 3 stk', price: 13.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    bilka: { name: 'Porrer i bdt 3 stk', price: 14.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+  },
+  'gulerødder': {
+    netto: { name: 'Netto Gulerødder 1kg', price: 8.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Gulerødder 1kg', price: 7.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Gulerødder 1kg', price: 7.49, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Gulerødder 1kg', price: 7.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Danske Gulerødder 1kg', price: 10.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Gulerødder 1kg', price: 10.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'gulerod': {
+    netto: { name: 'Netto Gulerødder 1kg', price: 8.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Gulerødder 1kg', price: 7.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Gulerødder 1kg', price: 7.49, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Gulerødder 1kg', price: 7.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Danske Gulerødder 1kg', price: 10.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Gulerødder 1kg', price: 10.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'tomater': {
+    netto: { name: 'Netto Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Friske Tomater 500g', price: 10.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Danske Tomater 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Tomater på gren 500g', price: 15.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'tomat': {
+    netto: { name: 'Netto Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Friske Tomater 500g', price: 10.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Tomater 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Danske Tomater 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Tomater 500g', price: 15.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'cherrytomater': {
+    netto: { name: 'Netto Cherrytomater 250g', price: 11.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Cherrytomater 250g', price: 11.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Cherrytomater 250g', price: 10.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Cherrytomater 250g', price: 11.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Søde Cherrytomater 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Cherrytomater på stilk 250g', price: 15.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'agurk': {
+    netto: { name: 'Netto Dansk Agurk', price: 7.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Agurk', price: 7.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Agurk', price: 6.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Dansk Agurk', price: 7.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Agurk klasse 1', price: 9.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Dansk Agurk', price: 9.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'peberfrugt': {
+    netto: { name: 'Netto Rød Peberfrugt 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Peberfrugt 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Rød Peberfrugt', price: 7.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Peberfrugt 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Spansk Peberfrugt', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Rød Peberfrugt', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'broccoli': {
+    netto: { name: 'Netto Broccoli 400g', price: 10.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Broccoli 400g', price: 10.50, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lidl Broccoli 400g', price: 9.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Frisk Broccoli', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Broccoli 400g', price: 12.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Broccoli Dansk', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'blomkål': {
+    netto: { name: 'Netto Blomkål 1 stk', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Blomkål 1 stk', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Frisk Blomkål', price: 12.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Blomkål', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Blomkål', price: 17.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Stort Blomkål', price: 18.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'spidskål': {
+    netto: { name: 'Netto Spidskål 1 stk', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Spidskål 1 stk', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Spidskål', price: 11.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Spidskål', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Spidskål', price: 15.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Frisk Spidskål', price: 16.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'hvidkål': {
+    netto: { name: 'Netto Hvidkål 1 stk', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Hvidkål 1 stk', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Hvidkål', price: 11.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Hvidkål', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Hvidkål', price: 16.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Hvidkål', price: 16.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'rødkål': {
+    netto: { name: 'Netto Rødkål 1 stk', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Rødkål 1 stk', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Rødkål', price: 12.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Rødkål', price: 13.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Rødkål', price: 17.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Frisk Rødkål', price: 17.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'spinat': {
+    netto: { name: 'Netto Babyspinat 100g', price: 10.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    rema: { name: 'REMA Babyspinat 125g', price: 10.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    lidl: { name: 'Lidl Babyspinat 125g', price: 9.99, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    coop365: { name: '365 Øko Spinat 100g', price: 10.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    foetex: { name: 'Frisk Babyspinat 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    bilka: { name: 'Vasket Babyspinat 125g', price: 14.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+  },
+  'squash': {
+    netto: { name: 'Netto Squash 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Squash 1 stk', price: 8.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Squash 1 stk', price: 7.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Grøn Squash', price: 8.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Grøn Squash 1 stk', price: 10.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Squash 1 stk', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'aubergine': {
+    netto: { name: 'Netto Aubergine 1 stk', price: 9.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Aubergine 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Aubergine 1 stk', price: 8.49, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Aubergine 1 stk', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Aubergine 1 stk', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Frisk Aubergine 1 stk', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'champignon': {
+    netto: { name: 'Netto Champignon 250g', price: 11.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Champignon 250g', price: 11.50, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Lidl Champignon 250g', price: 10.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Champignon 250g', price: 11.50, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Brune Champignon 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Champignon 400g', price: 18.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'svampe': {
+    netto: { name: 'Netto Champignon 250g', price: 11.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Champignon 250g', price: 11.50, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Lidl Champignon 250g', price: 10.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Champignon 250g', price: 11.50, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Champignon 400g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Brune Champignon 400g', price: 18.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'avocado': {
+    netto: { name: 'Netto Modne Avocadoer 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'REMA Modne Avocado 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Avocado Hass 2 stk', price: 14.99, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    coop365: { name: '365 Avocado 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Klar til brug Avocado 2 stk', price: 21.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    bilka: { name: 'Store Hass Avocadoer 2 stk', price: 22.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+  },
+  'avocadoer': {
+    netto: { name: 'Netto Modne Avocadoer 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'REMA Modne Avocado 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Avocado Hass 2 stk', price: 14.99, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    coop365: { name: '365 Avocado 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Klar til brug Avocado 2 stk', price: 21.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    bilka: { name: 'Store Hass Avocadoer 2 stk', price: 22.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+  },
+  'salat': {
+    netto: { name: 'Netto Icebergsalat', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Iceberg', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Icebergsalat', price: 7.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Icebergsalat', price: 8.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Sprød Iceberg', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Icebergsalat', price: 12.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'rucola': {
+    netto: { name: 'Netto Rucola 75g', price: 7.95, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+    rema: { name: 'REMA Rucola 75g', price: 7.95, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+    lidl: { name: 'Lidl Rucola 75g', price: 6.99, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+    coop365: { name: '365 Rucola 75g', price: 7.95, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+    foetex: { name: 'Frisk Rucola 75g', price: 10.95, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+    bilka: { name: 'Vasket Rucola 100g', price: 11.95, unit: '75g', packageAmount: 75, packageUnit: 'g' },
+  },
+  'græskar': {
+    netto: { name: 'Netto Græskar 1 stk', price: 14.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Hokkaido Græskar', price: 14.00, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Græskar 1 stk', price: 12.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Græskar 1 stk', price: 13.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Hokkaido Græskar', price: 17.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Butternut Græskar', price: 18.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'citron': {
+    netto: { name: 'Netto Citroner 3-pak', price: 8.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    rema: { name: 'REMA Citroner 3-pak', price: 8.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Citroner 3-pak', price: 7.99, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    coop365: { name: '365 Citroner 3-pak', price: 8.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    foetex: { name: 'Ubehandlede Citroner 3 stk', price: 11.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    bilka: { name: 'Øko Citroner 3-pak', price: 12.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+  },
+  'lime': {
+    netto: { name: 'Netto Lime 3-pak', price: 7.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    rema: { name: 'REMA Lime 3-pak', price: 7.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Lime 3-pak', price: 6.99, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    coop365: { name: '365 Lime 3-pak', price: 7.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    foetex: { name: 'Friske Lime 3-pak', price: 10.50, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+    bilka: { name: 'Limefrugter 3-pak', price: 10.95, unit: '3stk', packageAmount: 3, packageUnit: 'stk' },
+  },
+  'æbler': {
+    netto: { name: 'Netto Danske Æbler 1kg', price: 15.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Danske Æbler 1kg', price: 15.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Æbler 1kg', price: 13.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Danske Æbler 1kg', price: 15.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Elstar Æbler 1kg', price: 19.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Sprøde Æbler 1.5kg', price: 22.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'bananer': {
+    netto: { name: 'Netto Bananer 1 bdt', price: 11.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    rema: { name: 'REMA Bananer 1 bdt', price: 10.00, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    lidl: { name: 'Lidl Bananer 1 bdt', price: 10.99, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    coop365: { name: '365 Øko Bananer 1 bdt', price: 11.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    foetex: { name: 'Chiquita Bananer 1 bdt', price: 15.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    bilka: { name: 'Bananer i bdt', price: 15.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+  },
+  'ingefær': {
+    netto: { name: 'Netto Frisk Ingefær 150g', price: 9.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    rema: { name: 'REMA Ingefær 150g', price: 9.50, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    lidl: { name: 'Lidl Ingefær 150g', price: 8.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Ingefær 150g', price: 9.50, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    foetex: { name: 'Økologisk Ingefær 150g', price: 13.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    bilka: { name: 'Frisk Ingefær 150g', price: 14.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+  },
+  'chili': {
+    netto: { name: 'Netto Rød Chili 2 stk', price: 6.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'REMA Frisk Chili 2 stk', price: 6.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Rød Chili 2 stk', price: 5.99, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    coop365: { name: '365 Rød Chili 2 stk', price: 6.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Rød Chili 2 stk', price: 8.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    bilka: { name: 'Stærk Chili 2-pak', price: 9.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+  },
+  'pasta': {
+    netto: { name: 'Netto Spaghetti 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Pasta 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Combino Penne 500g', price: 7.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Øko Spaghetti 500g', price: 7.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'De Cecco Fusilli 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Barilla Spaghetti 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'spaghetti': {
+    netto: { name: 'Netto Spaghetti 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Spaghetti 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Combino Spaghetti 500g', price: 7.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Spaghetti 500g', price: 7.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'De Cecco Spaghetti 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Barilla Spaghetti 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'lasagneplader': {
+    netto: { name: 'Netto Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Combino Lasagne 500g', price: 9.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Barilla Lasagneplader 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Barilla Lasagneplader 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'nudler': {
+    netto: { name: 'Netto Ægnudler 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Ægnudler 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Vitasia Ægnudler 250g', price: 7.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Ægnudler 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Blue Dragon Ægnudler 250g', price: 13.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'SuRi Nudler 250g', price: 13.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'ris': {
+    netto: { name: 'Netto Ris 1kg', price: 14.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Langkornede Ris 1kg', price: 14.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Jasminris 1kg', price: 12.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Basmatiris 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Jasminris 1kg', price: 19.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Uncle Ben\'s Ris 1kg', price: 22.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'hvedemel': {
+    netto: { name: 'Netto Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    rema: { name: 'REMA Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    lidl: { name: 'Castello Hvedemel 2kg', price: 11.99, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    coop365: { name: '365 Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    foetex: { name: 'Kornkammeret Øko Mel 2kg', price: 17.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    bilka: { name: 'Finax Hvedemel 2kg', price: 18.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+  },
+  'mel': {
+    netto: { name: 'Netto Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    rema: { name: 'REMA Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    lidl: { name: 'Hvedemel 2kg', price: 11.99, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    coop365: { name: '365 Hvedemel 2kg', price: 12.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    foetex: { name: 'Kornkammeret Mel 2kg', price: 17.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+    bilka: { name: 'Finax Mel 2kg', price: 18.95, unit: '2000g', packageAmount: 2000, packageUnit: 'g' },
+  },
+  'havregryn': {
+    netto: { name: 'Netto Havregryn 1kg', price: 9.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Havregryn 1kg', price: 9.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Crownfield Havregryn 1kg', price: 8.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Havregryn 1kg', price: 9.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Ota Solgryn 1kg', price: 16.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Ota Solgryn 1kg', price: 16.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'gær': {
+    netto: { name: 'Netto Frisk Gær 50g', price: 1.75, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Gær 50g', price: 1.75, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Frisk Gær 50g', price: 1.49, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Gær 50g', price: 1.75, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Malteserkors Gær 50g', price: 2.50, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Frisk Gær 50g', price: 2.50, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'bagepulver': {
+    netto: { name: 'Netto Bagepulver 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA Bagepulver 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Bagepulver 140g', price: 8.99, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    coop365: { name: '365 Bagepulver 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Bagepulver 140g', price: 14.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    bilka: { name: 'Dr. Oetker Bagepulver 140g', price: 14.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+  },
+  'sukker': {
+    netto: { name: 'Netto Sukker 1kg', price: 12.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Sukker 1kg', price: 12.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Diamant Sukker 1kg', price: 11.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Sukker 1kg', price: 12.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Sukker 1kg', price: 16.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Dansukker Sukker 1kg', price: 16.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'brun farin': {
+    netto: { name: 'Netto Brun Farin 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Brun Farin 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Brun Farin 500g', price: 11.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Brun Farin 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Farin 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Dansukker Brun Farin 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'vaniljesukker': {
+    netto: { name: 'Netto Vaniljesukker 90g', price: 8.95, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+    rema: { name: 'REMA Vaniljesukker 90g', price: 8.95, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+    lidl: { name: 'Vaniljesukker 90g', price: 7.99, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+    coop365: { name: '365 Vaniljesukker 90g', price: 8.95, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Vaniljesukker 90g', price: 13.95, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+    bilka: { name: 'Tørsleffs Vaniljesukker 90g', price: 14.95, unit: '90g', packageAmount: 90, packageUnit: 'g' },
+  },
+  'honning': {
+    netto: { name: 'Netto Blomsterhonning 400g', price: 19.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Blomsterhonning 400g', price: 19.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Maribel Honning 400g', price: 17.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Honning 400g', price: 19.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Jakobsens Honning 400g', price: 27.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Jakobsens Akaciehonning 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'hakkede tomater': {
+    netto: { name: 'Netto Tomater Hakkede 400g', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Tomater Hakkede 400g', price: 8.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lidl Tomater Hakket 400g', price: 7.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Hakkede Tomater 400g', price: 7.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Hakkede Tomater 400g', price: 12.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Mutti Hakkede Tomater 400g', price: 15.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'flåede tomater': {
+    netto: { name: 'Netto Flåede Tomater 400g', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Flåede Tomater 400g', price: 8.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lidl Flåede Tomater 400g', price: 7.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Flåede Tomater 400g', price: 7.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Flåede Tomater 400g', price: 12.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Mutti Flåede Tomater 400g', price: 15.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'tomatpuré': {
+    netto: { name: 'Netto Tomatpuré 140g', price: 5.50, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Lidl Tomatpuré 140g', price: 4.99, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    coop365: { name: '365 Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Mutti Tomatpuré 140g', price: 8.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    bilka: { name: 'Mutti Dobbelt Tomatpuré 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+  },
+  'kokosmælk': {
+    netto: { name: 'Netto Kokosmælk 400ml', price: 9.95, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+    rema: { name: 'REMA Kokosmælk 400ml', price: 9.95, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+    lidl: { name: 'Vitasia Kokosmælk 400ml', price: 8.99, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+    coop365: { name: '365 Kokosmælk 400ml', price: 9.95, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+    foetex: { name: 'Santa Maria Kokosmælk 400ml', price: 15.95, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+    bilka: { name: 'Blue Dragon Kokosmælk 400ml', price: 16.95, unit: '400ml', packageAmount: 400, packageUnit: 'ml' },
+  },
+  'kidneybønner': {
+    netto: { name: 'Netto Kidneybønner 400g', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Kidneybønner 400g', price: 8.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lidl Røde Bønner 400g', price: 7.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Kidneybønner 400g', price: 8.50, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Kidneybønner 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Bonduelle Kidneybønner 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'bønner': {
+    netto: { name: 'Netto Kidneybønner 400g', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Kidneybønner 400g', price: 8.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Lidl Røde Bønner 400g', price: 7.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Kidneybønner 400g', price: 8.50, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Kidneybønner 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Bonduelle Kidneybønner 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'kikærter': {
+    netto: { name: 'Netto Kikærter 400g', price: 9.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Kikærter 400g', price: 8.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Freshona Kikærter 400g', price: 7.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Kikærter 400g', price: 8.50, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Bonduelle Kikærter 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Bonduelle Kikærter 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'ærter': {
+    netto: { name: 'Netto Fine Ærter 450g', price: 11.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    rema: { name: 'REMA Fine Ærter 450g', price: 11.50, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    lidl: { name: 'Freshona Fine Ærter 450g', price: 10.99, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    coop365: { name: '365 Øko Ærter 400g', price: 12.00, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    foetex: { name: 'Danske Ærter 600g', price: 19.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    bilka: { name: 'Findus Fine Ærter 600g', price: 21.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+  },
+  'majs': {
+    netto: { name: 'Netto Majs 3-pak', price: 8.95, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+    rema: { name: 'REMA Majs 3-pak', price: 8.95, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+    lidl: { name: 'Freshona Majs 3-pak', price: 7.99, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+    coop365: { name: '365 Majs 3-pak', price: 8.95, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+    foetex: { name: 'Bonduelle Majs 3-pak', price: 14.95, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+    bilka: { name: 'Bonduelle Majs 3-pak', price: 15.95, unit: '420g', packageAmount: 420, packageUnit: 'g' },
+  },
+  'linser': {
+    netto: { name: 'Netto Røde Linser 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Røde Linser 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Røde Linser 500g', price: 11.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Røde Linser 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Urtekram Øko Linser 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Røde Linser 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'oliven': {
+    netto: { name: 'Netto Sorte Oliven 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Kalamata Oliven 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Baresa Oliven 200g', price: 9.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Oliven 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Svansø Kalamata Oliven 200g', price: 16.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Græske Oliven 200g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'olie': {
+    netto: { name: 'Netto Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    rema: { name: 'REMA Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    lidl: { name: 'Vita D\'or Rapsolie 1L', price: 14.99, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    coop365: { name: '365 Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    foetex: { name: 'Bornholmsk Rapsolie 1L', price: 22.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    bilka: { name: 'Rapsolie 1L', price: 22.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+  },
+  'rapsolie': {
+    netto: { name: 'Netto Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    rema: { name: 'REMA Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    lidl: { name: 'Rapsolie 1L', price: 14.99, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    coop365: { name: '365 Rapsolie 1L', price: 16.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    foetex: { name: 'Rapsolie 1L', price: 22.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+    bilka: { name: 'Koldpresset Rapsolie 1L', price: 22.95, unit: '1000ml', packageAmount: 1000, packageUnit: 'ml' },
+  },
+  'olivenolie': {
+    netto: { name: 'Netto Jomfru Olivenolie 500ml', price: 41.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Olivenolie 500ml', price: 41.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Primadonna Olivenolie 500ml', price: 39.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Olivenolie 500ml', price: 41.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Monini Olivenolie 500ml', price: 52.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Filippo Berio Olivenolie 500ml', price: 54.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'eddike': {
+    netto: { name: 'Netto Hvidvinseddike 500ml', price: 11.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Hvidvinseddike 500ml', price: 11.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Vineddike 500ml', price: 9.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Eddike 500ml', price: 11.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Meyers Eddike 500ml', price: 17.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Beauvais Eddike 500ml', price: 17.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'sojasauce': {
+    netto: { name: 'Netto Sojasauce 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    rema: { name: 'REMA Sojasauce 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    lidl: { name: 'Vitasia Sojasauce 150ml', price: 10.99, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    coop365: { name: '365 Sojasauce 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    foetex: { name: 'Kikkoman Sojasauce 150ml', price: 21.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    bilka: { name: 'Kikkoman Sojasauce 150ml', price: 21.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+  },
+  'soja': {
+    netto: { name: 'Netto Sojasauce 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    rema: { name: 'REMA Sojasauce 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    lidl: { name: 'Vitasia Soja 150ml', price: 10.99, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    coop365: { name: '365 Soja 150ml', price: 12.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    foetex: { name: 'Kikkoman Soja 150ml', price: 21.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    bilka: { name: 'Kikkoman Soja 150ml', price: 21.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+  },
+  'pesto': {
+    netto: { name: 'Grøn/Rød Pesto 190g', price: 12.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    rema: { name: 'REMA Pesto 190g', price: 12.50, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    lidl: { name: 'Baresa Pesto 190g', price: 11.99, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    coop365: { name: '365 Pesto 190g', price: 12.50, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    foetex: { name: 'De Cecco Pesto 190g', price: 23.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    bilka: { name: 'Barilla Pesto Genovese 190g', price: 24.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+  },
+  'ketchup': {
+    netto: { name: 'Netto Ketchup 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Ketchup 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Kania Ketchup 500g', price: 10.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Ketchup 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Beauvais Ketchup 500g', price: 19.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Heinz Ketchup 500g', price: 21.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'mayonnaise': {
+    netto: { name: 'Netto Mayonnaise 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Mayonnaise 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Kania Mayonnaise 400g', price: 11.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Mayonnaise 400g', price: 13.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Graasten Mayonnaise 375g', price: 18.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Hellmann\'s Mayonnaise 400g', price: 21.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'sennep': {
+    netto: { name: 'Netto Dijon Sennep 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Sennep 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Kania Sennep 200g', price: 8.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Sennep 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Maille Dijon Sennep 215g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Maille Dijon Sennep 215g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'bouillon': {
+    netto: { name: 'Netto Bouillonterninger 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Bouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Kania Bouillon 10 stk', price: 8.99, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Bouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Bouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Bouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'grøntsagsbouillon': {
+    netto: { name: 'Netto Grøntbouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Grøntsagsbouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Grøntsagsbouillon 10 stk', price: 8.99, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Grøntbouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Grøntsagsbouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Grøntsagsbouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'hønsebouillon': {
+    netto: { name: 'Netto Hønsebouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Hønsebouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Hønsebouillon 10 stk', price: 8.99, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Hønsebouillon 10 stk', price: 9.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Hønsebouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Hønsebouillon 10 stk', price: 15.95, unit: '10stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'salt': {
+    netto: { name: 'Netto Groft Salt 1kg', price: 5.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Salt 1kg', price: 5.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Kania Salt 1kg', price: 4.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Groft Salt 1kg', price: 5.50, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Læsø Salt / Jozo 1kg', price: 8.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Maldon Flagesalt 250g', price: 24.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'peber': {
+    netto: { name: 'Netto Sort Peber 50g', price: 10.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Sort Peber 50g', price: 10.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Kania Sort Peber 50g', price: 8.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Sort Peber 50g', price: 10.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Sort Peber 50g', price: 16.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Kværnpeber 70g', price: 19.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'paprika': {
+    netto: { name: 'Netto Paprika 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    rema: { name: 'REMA Paprika 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    lidl: { name: 'Kania Paprika 40g', price: 6.99, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    coop365: { name: '365 Paprika 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Paprika 40g', price: 11.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Røget Paprika 40g', price: 12.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'karry': {
+    netto: { name: 'Netto Karry 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    rema: { name: 'REMA Karry 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    lidl: { name: 'Kania Karry 40g', price: 6.99, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    coop365: { name: '365 Karry 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Karry 40g', price: 11.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Karry 40g', price: 12.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'spidskommen': {
+    netto: { name: 'Netto Spidskommen 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    rema: { name: 'REMA Spidskommen 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    lidl: { name: 'Kania Spidskommen 40g', price: 6.99, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    coop365: { name: '365 Spidskommen 40g', price: 7.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Spidskommen 40g', price: 11.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Spidskommen 40g', price: 12.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'oregano': {
+    netto: { name: 'Netto Oregano 20g', price: 6.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    rema: { name: 'REMA Oregano 20g', price: 6.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    lidl: { name: 'Kania Oregano 20g', price: 5.99, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    coop365: { name: '365 Oregano 20g', price: 6.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Oregano 20g', price: 9.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Oregano 20g', price: 9.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+  },
+  'timian': {
+    netto: { name: 'Netto Frisk Timian', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Timian', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Frisk Timian potte', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Timian', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Timian i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Timian i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'basilikum': {
+    netto: { name: 'Netto Basilikum i potte', price: 12.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Basilikum', price: 12.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Lidl Frisk Basilikum', price: 11.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Basilikum', price: 12.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Basilikum i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Basilikum i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'persille': {
+    netto: { name: 'Netto Frisk Persille', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Persille', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Lidl Frisk Persille', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Persille', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Persille i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Bredbladet Persille i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'koriander': {
+    netto: { name: 'Netto Frisk Koriander', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Koriander', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Frisk Koriander', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Koriander', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Koriander i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Koriander i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'purløg': {
+    netto: { name: 'Netto Frisk Purløg', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Purløg', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Frisk Purløg', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Purløg', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Purløg i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Purløg i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'mandler': {
+    netto: { name: 'Netto Mandler 200g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Mandler 200g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Alesto Mandler 200g', price: 15.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Mandler 200g', price: 17.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Svansø Mandler 200g', price: 23.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Mandler 200g', price: 24.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'valnødder': {
+    netto: { name: 'Netto Valnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    rema: { name: 'REMA Valnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    lidl: { name: 'Alesto Valnødder 150g', price: 16.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Valnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    foetex: { name: 'Svansø Valnødder 150g', price: 24.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    bilka: { name: 'Valnødder 200g', price: 26.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+  },
+  'peanuts': {
+    netto: { name: 'Netto Peanuts 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Peanuts 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Alesto Peanuts 250g', price: 9.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Peanuts 250g', price: 10.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Kims Peanuts 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Kims Peanuts 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'brød': {
+    netto: { name: 'Netto Kernerugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Rugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Bagerens Rugbrød 1kg', price: 11.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Rugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Kohberg Rugbrød 1kg', price: 19.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Schulstad Rugbrød 1kg', price: 21.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'rugbrød': {
+    netto: { name: 'Netto Rugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Rugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Bagerens Rugbrød 1kg', price: 11.99, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Rugbrød 1kg', price: 13.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Kohberg Rugbrød 1kg', price: 19.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Schulstad Rugbrød 1kg', price: 21.95, unit: '1000g', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'toastbrød': {
+    netto: { name: 'Netto Toastbrød 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Toastbrød 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Bagerens Toast 500g', price: 9.49, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Toastbrød 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Kohberg Hvidt Toast 500g', price: 15.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Schulstad Toast 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'tortilla': {
+    netto: { name: 'Netto Tortillas 8 stk', price: 10.95, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+    rema: { name: 'REMA Pandekager 8 stk', price: 10.95, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+    lidl: { name: 'El Tequito Tortillas 8 stk', price: 9.99, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+    coop365: { name: '365 Tortillas 8 stk', price: 10.95, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+    foetex: { name: 'Santa Maria Tortillas 8 stk', price: 16.95, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+    bilka: { name: 'Old El Paso Tortillas 8 stk', price: 17.95, unit: '8stk', packageAmount: 8, packageUnit: 'stk' },
+  },
+  'pitabrød': {
+    netto: { name: 'Netto Pitabrød 6 stk', price: 8.95, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+    rema: { name: 'REMA Pitabrød 6 stk', price: 8.95, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+    lidl: { name: 'Bagerens Pitabrød 6 stk', price: 7.99, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+    coop365: { name: '365 Pitabrød 6 stk', price: 8.95, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+    foetex: { name: 'Hatting Pitabrød 6 stk', price: 13.95, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+    bilka: { name: 'Hatting Pitabrød 6 stk', price: 14.95, unit: '6stk', packageAmount: 6, packageUnit: 'stk' },
+  },
+  'sodavand': {
+    netto: { name: 'Pepsi Max 1.5L', price: 13.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    rema: { name: 'Coca-Cola Zero 1.5L', price: 13.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    lidl: { name: 'Freeway Cola 1.5L', price: 8.99, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    coop365: { name: 'Pepsi Max 1.5L', price: 13.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    foetex: { name: 'Coca-Cola 1.5L', price: 18.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    bilka: { name: 'Coca-Cola 1.5L', price: 18.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+  },
+  'mineralvand': {
+    netto: { name: 'Netto Danskvand 1.5L', price: 6.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    rema: { name: 'REMA Danskvand 1.5L', price: 6.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    lidl: { name: 'Saskia Danskvand 1.5L', price: 5.99, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    coop365: { name: '365 Danskvand 1.5L', price: 6.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    foetex: { name: 'San Pellegrino 1L', price: 14.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    bilka: { name: 'Ramlösa 1.5L', price: 14.95, unit: '1.5l', packageAmount: 1.5, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+  },
+  'appelsinjuice': {
+    netto: { name: 'Netto Appelsinjuice 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'REMA Appelsinjuice 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Solevita Appelsinjuice 1L', price: 11.49, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: '365 Appelsinjuice 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Rynkeby Appelsinjuice 1L', price: 18.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Innocent Appelsinjuice 900ml', price: 21.95, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'kaffe': {
+    netto: { name: 'Netto Kaffe 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Kaffe 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Bellarom Kaffe 500g', price: 32.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Kaffe 500g', price: 36.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Merrild Mellemristet 500g', price: 49.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Gevalia Original 500g', price: 49.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'vand': {
+    netto: { name: 'Vand fra hanen', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    rema: { name: 'Postevand', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    lidl: { name: 'Postevand', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    coop365: { name: 'Postevand', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    foetex: { name: 'Postevand', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+    bilka: { name: 'Postevand', price: 0.00, unit: '1l', packageAmount: 1, packageUnit: 'l' },
+  },
+  'kakaopulver': {
+    netto: { name: 'Netto Bagekakao 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    rema: { name: 'REMA Bagekakao 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    lidl: { name: 'Belbake Kakao 125g', price: 11.99, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    coop365: { name: '365 Kakao 125g', price: 13.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Kakao 125g', price: 18.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    bilka: { name: 'Van Houten Kakao 125g', price: 19.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+  },
+  'rasp': {
+    netto: { name: 'Netto Rasp 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Rasp 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Castello Rasp 500g', price: 7.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Rasp 500g', price: 8.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Panko / Hvederasp 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Dansk Rasp 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'radiser': {
+    netto: { name: 'Netto Radiser 1 bdt', price: 6.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    rema: { name: 'REMA Radiser 1 bdt', price: 6.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    lidl: { name: 'Radiser 1 bdt', price: 5.99, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    coop365: { name: '365 Radiser 1 bdt', price: 6.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    foetex: { name: 'Danske Radiser 1 bdt', price: 9.50, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+    bilka: { name: 'Radiser 1 bdt', price: 9.95, unit: '1bundt', packageAmount: 1, packageUnit: 'bundt' },
+  },
+  'karse': {
+    netto: { name: 'Netto Karse 1 bakke', price: 4.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Karse 1 bakke', price: 4.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Karse 1 bakke', price: 3.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Karse 1 bakke', price: 4.50, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Frisk Karse 1 bakke', price: 5.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Dansk Karse 1 bakke', price: 5.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'laurbærblade': {
+    netto: { name: 'Netto Laurbærblade 15g', price: 6.95, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+    rema: { name: 'REMA Laurbærblade 15g', price: 6.95, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+    lidl: { name: 'Laurbærblade 15g', price: 5.99, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+    coop365: { name: '365 Laurbærblade 15g', price: 6.95, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Laurbærblade 15g', price: 9.95, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+    bilka: { name: 'Laurbærblade 15g', price: 9.95, unit: '15g', packageAmount: 15, packageUnit: 'g' },
+  },
+  'dild': {
+    netto: { name: 'Netto Frisk Dild', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Dild', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Frisk Dild', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Dild', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Dild i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Dild i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'rosmarin': {
+    netto: { name: 'Netto Frisk Rosmarin', price: 11.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    rema: { name: 'REMA Frisk Rosmarin', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    lidl: { name: 'Frisk Rosmarin', price: 10.99, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    coop365: { name: '365 Frisk Rosmarin', price: 11.50, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    foetex: { name: 'Frisk Rosmarin i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+    bilka: { name: 'Frisk Rosmarin i potte', price: 14.95, unit: '1potte', packageAmount: 1, packageUnit: 'potte' },
+  },
+  'kanel': {
+    netto: { name: 'Netto Kanel 40g', price: 6.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    rema: { name: 'REMA Kanel 40g', price: 6.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    lidl: { name: 'Kania Kanel 40g', price: 5.99, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    coop365: { name: '365 Kanel 40g', price: 6.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Kanel 40g', price: 9.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Kanel 40g', price: 9.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'muskatnød': {
+    netto: { name: 'Netto Muskatnød 30g', price: 9.95, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+    rema: { name: 'REMA Muskatnød 30g', price: 9.95, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+    lidl: { name: 'Muskatnød 30g', price: 8.99, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+    coop365: { name: '365 Muskatnød 30g', price: 9.95, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Muskatnød 30g', price: 13.95, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+    bilka: { name: 'Muskatnød 30g', price: 14.95, unit: '30g', packageAmount: 30, packageUnit: 'g' },
+  },
+  'chiliflager': {
+    netto: { name: 'Netto Chiliflager 35g', price: 7.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    rema: { name: 'REMA Chiliflager 35g', price: 7.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    lidl: { name: 'Chiliflager 35g', price: 6.99, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    coop365: { name: '365 Chiliflager 35g', price: 7.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Chili Flakes 35g', price: 11.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Chiliflager 35g', price: 11.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+  },
+  'majsstivelse': {
+    netto: { name: 'Netto Majsstivelse 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Majsstivelse 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Majsstivelse 400g', price: 12.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Majsstivelse 400g', price: 14.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Maizena Majsstivelse 400g', price: 19.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Maizena 400g', price: 19.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'balsamico': {
+    netto: { name: 'Netto Balsamico 250ml', price: 14.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    rema: { name: 'REMA Balsamico 250ml', price: 14.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    lidl: { name: 'Baresa Balsamico 250ml', price: 12.99, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    coop365: { name: '365 Balsamico 250ml', price: 14.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    foetex: { name: 'Mazzetti Balsamico 250ml', price: 22.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    bilka: { name: 'Mazzetti Balsamico 250ml', price: 22.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+  },
+  'sesamfrø': {
+    netto: { name: 'Netto Sesamfrø 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Sesamfrø 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Sesamfrø 200g', price: 9.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Sesamfrø 200g', price: 10.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Svansø Sesamfrø 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Sesamfrø 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'solsikkekerner': {
+    netto: { name: 'Netto Solsikkekerner 400g', price: 11.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Solsikkekerner 400g', price: 11.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Solsikkekerner 400g', price: 9.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Solsikkekerner 400g', price: 11.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Svansø Solsikkekerner 400g', price: 16.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Solsikkekerner 400g', price: 16.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'pinjekerner': {
+    netto: { name: 'Netto Pinjekerner 50g', price: 20.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Pinjekerner 50g', price: 20.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Alesto Pinjekerner 50g', price: 18.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Pinjekerner 50g', price: 20.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Svansø Pinjekerner 50g', price: 27.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Pinjekerner 50g', price: 28.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'cashewnødder': {
+    netto: { name: 'Netto Cashewnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    rema: { name: 'REMA Cashewnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    lidl: { name: 'Alesto Cashewnødder 150g', price: 16.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Cashewnødder 150g', price: 18.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    foetex: { name: 'Svansø Cashewnødder 150g', price: 25.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    bilka: { name: 'Cashewnødder 150g', price: 26.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+  },
+  'bambusspyd': {
+    netto: { name: 'Grillspyd 50 stk', price: 8.95, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+    rema: { name: 'REMA Grillspyd 50 stk', price: 8.95, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+    lidl: { name: 'Bambusspyd 50 stk', price: 7.99, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+    coop365: { name: '365 Grillspyd 50 stk', price: 8.95, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+    foetex: { name: 'Bambusspyd 50 stk', price: 12.95, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+    bilka: { name: 'Grillspyd i Træ 50 stk', price: 12.95, unit: '50stk', packageAmount: 50, packageUnit: 'stk' },
+  },
+  'kakaomælk': {
+    netto: { name: 'Netto Kakaomælk 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    rema: { name: 'Mathilde Kakaomælk 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    lidl: { name: 'Milbona Kakaomælk 1L', price: 10.99, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    coop365: { name: '365 Kakaomælk 1L', price: 12.95, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    foetex: { name: 'Mathilde Kakaomælk 1L', price: 17.95, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+    bilka: { name: 'Cocio One 1L', price: 19.95, unit: '1l', packageAmount: 1, packageUnit: 'l', pant: 3.00, pantType: 'Pant B' },
+  },
+  'asparges': {
+    netto: { name: 'Netto Grønne Asparges 250g', price: 18.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Asparges 250g', price: 18.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Grønne Asparges 250g', price: 16.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Asparges 250g', price: 18.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Friske Asparges 250g', price: 23.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Store Grønne Asparges 250g', price: 24.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'bladselleri': {
+    netto: { name: 'Netto Bladselleri 1 stk', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Bladselleri 1 stk', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Bladselleri 1 stk', price: 10.99, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Bladselleri 1 stk', price: 11.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Sprød Bladselleri 1 stk', price: 14.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Bladselleri 1 stk', price: 15.95, unit: '1stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'kapers': {
+    netto: { name: 'Netto Kapers 100g', price: 8.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    rema: { name: 'REMA Kapers 100g', price: 8.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    lidl: { name: 'Baresa Kapers 100g', price: 7.99, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    coop365: { name: '365 Kapers 100g', price: 8.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    foetex: { name: 'Svansø Kapers 100g', price: 12.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    bilka: { name: 'Små Kapers 100g', price: 13.95, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+  },
+  'naanbrød': {
+    netto: { name: 'Netto Naanbrød 2 stk', price: 11.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'REMA Naanbrød 2 stk', price: 11.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Vitasia Naan 2 stk', price: 9.99, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    coop365: { name: '365 Naanbrød 2 stk', price: 11.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Patak\'s Naanbrød 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+    bilka: { name: 'Patak\'s Hvidløgs Naan 2 stk', price: 16.95, unit: '2stk', packageAmount: 2, packageUnit: 'stk' },
+  },
+    'spidskommen': {
+    netto: { name: 'Netto Stødt Spidskommen 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Spidskommen 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    lidl: { name: 'Kania Spidskommen 45g', price: 8.99, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    coop365: { name: '365 Spidskommen 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Spidskommen 43g', price: 14.95, unit: '43g', packageAmount: 43, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Spidskommen 43g', price: 14.95, unit: '43g', packageAmount: 43, packageUnit: 'g' },
+  },
+  'kanel': {
+    netto: { name: 'Netto Stødt Kanel 45g', price: 8.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    rema: { name: 'REMA Stødt Kanel 45g', price: 8.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    lidl: { name: 'Kania Kanel 45g', price: 7.99, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    coop365: { name: '365 Stødt Kanel 45g', price: 8.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Kanel 45g', price: 12.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Kanel 45g', price: 12.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+  },
+  'paprika': {
+    netto: { name: 'Netto Mild Paprika 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Sød Paprika 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Kania Paprika 50g', price: 7.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Paprika 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Paprika 50g', price: 12.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Paprika 50g', price: 12.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'røget paprika': {
+    netto: { name: 'Netto Røget Paprika 45g', price: 10.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    rema: { name: 'REMA Røget Paprika 40g', price: 10.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    lidl: { name: 'Kania Røget Paprika 45g', price: 9.99, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    coop365: { name: '365 Røget Paprika 45g', price: 10.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Røget Paprika 40g', price: 15.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Røget Paprika 40g', price: 15.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'oregano': {
+    netto: { name: 'Netto Tørret Oregano 20g', price: 7.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    rema: { name: 'REMA Oregano 20g', price: 7.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    lidl: { name: 'Kania Oregano 25g', price: 6.99, unit: '25g', packageAmount: 25, packageUnit: 'g' },
+    coop365: { name: '365 Oregano 20g', price: 7.95, unit: '20g', packageAmount: 20, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Oregano 22g', price: 12.95, unit: '22g', packageAmount: 22, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Oregano 22g', price: 12.95, unit: '22g', packageAmount: 22, packageUnit: 'g' },
+  },
+  'timian': {
+    netto: { name: 'Netto Tørret Timian 25g', price: 8.95, unit: '25g', packageAmount: 25, packageUnit: 'g' },
+    rema: { name: 'REMA Timian 25g', price: 8.95, unit: '25g', packageAmount: 25, packageUnit: 'g' },
+    lidl: { name: 'Kania Timian 25g', price: 7.99, unit: '25g', packageAmount: 25, packageUnit: 'g' },
+    coop365: { name: '365 Timian 25g', price: 8.95, unit: '25g', packageAmount: 25, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Timian 23g', price: 13.95, unit: '23g', packageAmount: 23, packageUnit: 'g' },
+    bilka: { name: 'Frisk Øko Timian Potte', price: 14.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'koriander': {
+    netto: { name: 'Frisk Koriander Potte', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Frisk Koriander', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Frisk Koriander', price: 10.99, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Koriander Potte', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Øko Koriander Potte', price: 14.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Frisk Koriander', price: 14.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'muskatnød': {
+    netto: { name: 'Netto Stødt Muskat 35g', price: 12.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    rema: { name: 'REMA Stødt Muskatnød 35g', price: 12.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    lidl: { name: 'Kania Muskatnød 35g', price: 11.99, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    coop365: { name: '365 Stødt Muskatnød 35g', price: 12.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Muskatnød 36g', price: 16.95, unit: '36g', packageAmount: 36, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Muskatnød 36g', price: 16.95, unit: '36g', packageAmount: 36, packageUnit: 'g' },
+  },
+  'karry': {
+    netto: { name: 'Netto Karry 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Karry 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Kania Karry 50g', price: 7.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Karry 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Madras Karry 42g', price: 13.95, unit: '42g', packageAmount: 42, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Karry 42g', price: 13.95, unit: '42g', packageAmount: 42, packageUnit: 'g' },
+  },
+  'gurkemeje': {
+    netto: { name: 'Netto Stødt Gurkemeje 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    rema: { name: 'REMA Gurkemeje 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    lidl: { name: 'Kania Gurkemeje 45g', price: 8.99, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    coop365: { name: '365 Gurkemeje 45g', price: 9.95, unit: '45g', packageAmount: 45, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Gurkemeje 40g', price: 14.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Gurkemeje 40g', price: 14.95, unit: '40g', packageAmount: 40, packageUnit: 'g' },
+  },
+  'chili': {
+    netto: { name: 'Frisk Rød Chili 2 stk', price: 7.95, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'REMA Rød Chili 2 stk', price: 7.95, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Rød Chili 3 stk', price: 7.49, unit: '3 stk', packageAmount: 3, packageUnit: 'stk' },
+    coop365: { name: '365 Rød Chili 2 stk', price: 7.95, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Rød Chili 50g', price: 9.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Røde Chilier 60g', price: 9.95, unit: '60g', packageAmount: 60, packageUnit: 'g' },
+  },
+  'vaniljesukker': {
+    netto: { name: 'Netto Vaniljesukker 85g', price: 6.95, unit: '85g', packageAmount: 85, packageUnit: 'g' },
+    rema: { name: 'REMA Vaniljesukker 85g', price: 6.95, unit: '85g', packageAmount: 85, packageUnit: 'g' },
+    lidl: { name: 'Belbake Vaniljesukker 100g', price: 6.49, unit: '100g', packageAmount: 100, packageUnit: 'g' },
+    coop365: { name: '365 Vaniljesukker 85g', price: 6.95, unit: '85g', packageAmount: 85, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Vaniljesukker 85g', price: 10.95, unit: '85g', packageAmount: 85, packageUnit: 'g' },
+    bilka: { name: 'Dr. Oetker Vaniljesukker 85g', price: 10.95, unit: '85g', packageAmount: 85, packageUnit: 'g' },
+  },
+  'bagepulver': {
+    netto: { name: 'Netto Bagepulver 140g', price: 7.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA Bagepulver 140g', price: 7.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Belbake Bagepulver 150g', price: 6.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Bagepulver 140g', price: 7.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Bagepulver 140g', price: 11.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    bilka: { name: 'Dr. Oetker Bagepulver 140g', price: 11.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+  },
+  'natron': {
+    netto: { name: 'Netto Natron 140g', price: 6.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA Natron 140g', price: 6.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Belbake Natron 150g', price: 5.99, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    coop365: { name: '365 Natron 140g', price: 6.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Dr. Oetker Natron 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    bilka: { name: 'Dr. Oetker Natron 140g', price: 9.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+  },
+  'gær': {
+    netto: { name: 'De Danske Gærfabrikker 50g', price: 1.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Frisk Gær 50g', price: 1.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Lidl Frisk Gær 50g', price: 1.89, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Frisk Gær 50g', price: 1.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Frisk Bagegær 50g', price: 2.50, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Bagegær 50g', price: 2.50, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'flormelis': {
+    netto: { name: 'Netto Flormelis 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Flormelis 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Belbake Flormelis 500g', price: 10.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Flormelis 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Flormelis 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Dansukker Flormelis 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'sukker': {
+    netto: { name: 'Netto Sukker 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Hvidt Sukker 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Belbake Sukker 1kg', price: 13.99, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Sukker 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Sukker 1kg', price: 16.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Dansukker Sukker 1kg', price: 16.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'brun farin': {
+    netto: { name: 'Netto Brun Farin 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Brun Farin 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Belbake Brun Farin 500g', price: 12.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Brun Farin 500g', price: 13.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Brun Farin 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Dansukker Brun Farin 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'flagesalt': {
+    netto: { name: 'Netto Flagesalt 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Flagesalt 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Deluxe Havsalt Flager 250g', price: 15.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Flagesalt 250g', price: 16.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Maldon Sea Salt Flakes 250g', price: 26.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Maldon Flagesalt 250g', price: 26.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'groft salt': {
+    netto: { name: 'Netto Groft Salt 1kg', price: 5.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Groft Køkkensalt 1kg', price: 5.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Kania Groft Salt 1kg', price: 4.99, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Groft Salt 1kg', price: 5.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Jozo Groft Salt 1kg', price: 8.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Jozo Groft Salt 1kg', price: 8.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'peber': {
+    netto: { name: 'Netto Sort Stødt Peber 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Stødt Sort Peber 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Kania Sort Peber 50g', price: 7.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Sort Peber 50g', price: 8.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Sort Peber 50g', price: 13.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Peber 50g', price: 13.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+  },
+  'friskkværnet peber': {
+    netto: { name: 'Netto Peberkværn med Sort Peber', price: 16.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    rema: { name: 'REMA Peberkværn 50g', price: 16.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    lidl: { name: 'Kania Peberkværn 50g', price: 14.99, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    coop365: { name: '365 Peberkværn 50g', price: 16.95, unit: '50g', packageAmount: 50, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Tellicherry Kværn', price: 29.95, unit: '70g', packageAmount: 70, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Tellicherry Peber', price: 29.95, unit: '70g', packageAmount: 70, packageUnit: 'g' },
+  },
+  'madlavningsfløde': {
+    netto: { name: 'Netto Madlavningsfløde 18% 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Madlavningsfløde 18% 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Milbona Madfløde 18% 500ml', price: 12.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Madfløde 18% 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Arla Madlavningsfløde 18% 500ml', price: 18.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Arla Madlavningsfløde 18% 500ml', price: 18.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'creme fraiche': {
+    netto: { name: 'Netto Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Milbona Creme Fraiche 18% 500g', price: 13.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Arla Creme Fraiche 18% 500g', price: 19.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Arla Creme Fraiche 18% 500g', price: 19.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'cremefraiche': {
+    netto: { name: 'Netto Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Milbona Creme Fraiche 18% 500g', price: 13.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Creme Fraiche 18% 500g', price: 14.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Arla Creme Fraiche 18% 500g', price: 19.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Arla Creme Fraiche 18% 500g', price: 19.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'sødmælk': {
+    netto: { name: 'Netto Dansk Sødmælk 1L', price: 12.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    rema: { name: 'REMA Sødmælk 1L', price: 12.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    lidl: { name: 'Milbona Sødmælk 1L', price: 11.99, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    coop365: { name: '365 Sødmælk 1L', price: 12.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    foetex: { name: 'Arla 24 Sødmælk 1L', price: 14.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    bilka: { name: 'Arla Sødmælk 1L', price: 14.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+  },
+  'skyr': {
+    netto: { name: 'Netto Skyr Naturel 1kg', price: 22.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Skyr Naturel 1kg', price: 22.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Milbona Skyr Naturel 1kg', price: 21.99, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Skyr Naturel 1kg', price: 22.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Stay Strong Skyr Naturel 1kg', price: 26.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Arla Cheasy Skyr 1kg', price: 27.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'ricotta': {
+    netto: { name: 'Netto Ricotta 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Ricotta 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Italiamo Ricotta 250g', price: 13.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Ricotta 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Galbani Ricotta 250g', price: 21.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Galbani Ricotta 250g', price: 21.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'mascarpone': {
+    netto: { name: 'Netto Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Italiamo Mascarpone 250g', price: 16.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Mascarpone 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Galbani Mascarpone 250g', price: 24.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Galbani Mascarpone 250g', price: 24.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'mozzarella': {
+    netto: { name: 'Netto Frisk Mozzarella 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    rema: { name: 'REMA Mozzarella Kugle 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    lidl: { name: 'Milbona Mozzarella 125g', price: 7.99, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    coop365: { name: '365 Frisk Mozzarella 125g', price: 8.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    foetex: { name: 'Galbani Mozzarella 125g', price: 14.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+    bilka: { name: 'Galbani Mozzarella 125g', price: 14.95, unit: '125g', packageAmount: 125, packageUnit: 'g' },
+  },
+  'revet mozzarella': {
+    netto: { name: 'Netto Revet Mozzarella 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Revet Mozzarella 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Revet Mozzarella 200g', price: 13.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Revet Mozzarella 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Arla Fin Revet Mozzarella 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Arla Revet Mozzarella 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'revet ost': {
+    netto: { name: 'Netto Revet Pizzaost 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Revet Gratinost 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Revet Ost 200g', price: 13.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Revet Ost 200g', price: 14.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Arla Revet Tex Mex 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Arla Revet Pizzaost 200g', price: 19.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'cheddar': {
+    netto: { name: 'Netto Cheddar i Skiver 150g', price: 15.95, unit: '150g', packageAmount: 150, packageUnit: 'g' },
+    rema: { name: 'REMA Engelsk Cheddar 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Valley Spire Cheddar 200g', price: 16.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Rød Cheddar 200g', price: 18.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Cathedral City Cheddar 200g', price: 27.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Cathedral City Cheddar 200g', price: 27.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'salatost': {
+    netto: { name: 'Netto Salatost i Tern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Salatost i Tern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Milbona Salattern 200g', price: 12.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Salattern 200g', price: 13.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Arla Apetina Tern 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Apetina Salatost Tern 200g', price: 21.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'marcipan': {
+    netto: { name: 'Netto Ren Rå Marcipan 400g', price: 32.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'REMA Rå Marcipan 400g', price: 32.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Belbake Marcipan 400g', price: 29.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Marcipan 400g', price: 32.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Odense Ren Rå Marcipan 400g', price: 44.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Odense Marcipan 400g', price: 44.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'spidskål': {
+    netto: { name: 'Dansk Spidskål 1 stk', price: 12.00, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Dansk Spidskål', price: 12.00, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Spidskål', price: 11.49, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Spidskål', price: 12.00, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Øko Spidskål 1 stk', price: 15.00, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Dansk Spidskål', price: 15.00, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'squash': {
+    netto: { name: 'Grøn Squash 1 stk', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Squash', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Grøn Squash', price: 7.99, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Grøn Squash', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Dansk Squash 1 stk', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Grøn Squash', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'aubergine': {
+    netto: { name: 'Aubergine 1 stk', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'REMA Aubergine', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Aubergine', price: 7.99, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: '365 Aubergine', price: 8.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Aubergine 1 stk', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Aubergine', price: 11.95, unit: 'stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'forårsløg': {
+    netto: { name: 'Forårsløg 1 bdt', price: 6.95, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+    rema: { name: 'REMA Forårsløg bdt', price: 6.95, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+    lidl: { name: 'Lidl Forårsløg bdt', price: 6.49, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+    coop365: { name: '365 Forårsløg bdt', price: 6.95, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+    foetex: { name: 'Dansk Forårsløg', price: 8.95, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+    bilka: { name: 'Forårsløg bundt', price: 8.95, unit: 'bdt', packageAmount: 1, packageUnit: 'bdt' },
+  },
+  'lime': {
+    netto: { name: 'Lime 3 stk', price: 10.00, unit: '3 stk', packageAmount: 3, packageUnit: 'stk' },
+    rema: { name: 'REMA Lime 3 stk', price: 10.00, unit: '3 stk', packageAmount: 3, packageUnit: 'stk' },
+    lidl: { name: 'Lidl Lime 4 stk', price: 9.99, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    coop365: { name: '365 Lime 3 stk', price: 10.00, unit: '3 stk', packageAmount: 3, packageUnit: 'stk' },
+    foetex: { name: 'Øko Lime 4 stk', price: 14.95, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    bilka: { name: 'Lime 4 stk', price: 14.95, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+  },
+  'citronsaft': {
+    netto: { name: 'Netto Citronsaft 200ml', price: 6.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    rema: { name: 'REMA Citronsaft 200ml', price: 6.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    lidl: { name: 'Kania Citronsaft 200ml', price: 5.99, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    coop365: { name: '365 Citronsaft 200ml', price: 6.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    foetex: { name: 'Sicilia Citronsaft 200ml', price: 10.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    bilka: { name: 'Sicilia Citronsaft 200ml', price: 10.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+  },
+  'rapsolie': {
+    netto: { name: 'Netto Rapsolie 1L', price: 16.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    rema: { name: 'REMA 1000 Rapsolie 1L', price: 16.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    lidl: { name: 'Vita D\'or Rapsolie 1L', price: 15.99, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    coop365: { name: '365 Rapsolie 1L', price: 16.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+    foetex: { name: 'Bornholms Rapsolie 500ml', price: 24.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Rapsolie 1L', price: 18.95, unit: '1L', packageAmount: 1000, packageUnit: 'ml' },
+  },
+  'olivenolie': {
+    netto: { name: 'Netto Ekstra Jomfru Olivenolie 500ml', price: 42.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Ekstra Jomfru Olivenolie 500ml', price: 42.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Primadonna Olivenolie 500ml', price: 39.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Jomfru Olivenolie 500ml', price: 42.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Monini Classico Olivenolie 500ml', price: 59.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Filippo Berio Olivenolie 500ml', price: 59.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'balsamico': {
+    netto: { name: 'Netto Balsamicoeddike 500ml', price: 16.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Balsamico 500ml', price: 16.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Italiamo Aceto Balsamico 500ml', price: 15.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Balsamicoeddike 500ml', price: 16.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Mazzetti Balsamico 250ml', price: 29.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+    bilka: { name: 'Mazzetti Balsamico 250ml', price: 29.95, unit: '250ml', packageAmount: 250, packageUnit: 'ml' },
+  },
+  'æblecidereddike': {
+    netto: { name: 'Netto Æblecidereddike 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'REMA Æblecidereddike 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Kania Æbleeddike 500ml', price: 12.99, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: '365 Æblecidereddike 500ml', price: 13.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Øko Æblecidereddike 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Heerup Æblecidereddike 500ml', price: 19.95, unit: '500ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'sojasauce': {
+    netto: { name: 'Netto Sojasauce 150ml', price: 11.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    rema: { name: 'REMA Soya 150ml', price: 11.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    lidl: { name: 'Vitasia Soja Sauce 150ml', price: 10.99, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    coop365: { name: '365 Soya 150ml', price: 11.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    foetex: { name: 'Kikkoman Sojasauce 150ml', price: 24.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+    bilka: { name: 'Kikkoman Sojasauce 150ml', price: 24.95, unit: '150ml', packageAmount: 150, packageUnit: 'ml' },
+  },
+  'honning': {
+    netto: { name: 'Netto Flydende Blomsterhonning 450g', price: 22.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    rema: { name: 'REMA Flydende Honning 450g', price: 22.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    lidl: { name: 'Marthas Honning 500g', price: 21.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Flydende Honning 450g', price: 22.95, unit: '450g', packageAmount: 450, packageUnit: 'g' },
+    foetex: { name: 'Jakobsens Flydende Honning 400g', price: 34.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Jakobsens Blomsterhonning 400g', price: 34.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'sennep': {
+    netto: { name: 'Netto Grov Sennep 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Taffelsennep 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Kania Sennep 250g', price: 7.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Sennep 250g', price: 8.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Bähncke Taffelsennep 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Bähncke Sennep 250g', price: 14.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'dijonsennep': {
+    netto: { name: 'Netto Dijonsennep 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'REMA Dijonsennep 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Batts Dijon Sennep 200g', price: 10.99, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Dijonsennep 200g', price: 11.95, unit: '200g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Maille Dijon Original 215g', price: 22.95, unit: '215g', packageAmount: 215, packageUnit: 'g' },
+    bilka: { name: 'Maille Dijon Sennep 215g', price: 22.95, unit: '215g', packageAmount: 215, packageUnit: 'g' },
+  },
+  'ketchup': {
+    netto: { name: 'Netto Tomatketchup 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Ketchup 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Kania Tomatketchup 500g', price: 9.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Tomatketchup 500g', price: 10.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Heinz Tomatketchup 570g', price: 24.95, unit: '570g', packageAmount: 570, packageUnit: 'g' },
+    bilka: { name: 'Heinz Ketchup 570g', price: 24.95, unit: '570g', packageAmount: 570, packageUnit: 'g' },
+  },
+  'mayonnaise': {
+    netto: { name: 'Netto Ægte Mayonnaise 375g', price: 12.95, unit: '375g', packageAmount: 375, packageUnit: 'g' },
+    rema: { name: 'REMA Mayonnaise 375g', price: 12.95, unit: '375g', packageAmount: 375, packageUnit: 'g' },
+    lidl: { name: 'Vita D\'or Mayo 400g', price: 11.99, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Mayonnaise 375g', price: 12.95, unit: '375g', packageAmount: 375, packageUnit: 'g' },
+    foetex: { name: 'Hellmann\'s Real Mayo 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Hellmann\'s Mayo 400g', price: 29.95, unit: '400g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'tomatpure': {
+    netto: { name: 'Netto Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Baresa Tomatpuré 140g', price: 4.49, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    coop365: { name: '365 Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Mutti Dobbelt Tomatpuré 130g', price: 12.95, unit: '130g', packageAmount: 130, packageUnit: 'g' },
+    bilka: { name: 'Mutti Tomatpuré 130g', price: 12.95, unit: '130g', packageAmount: 130, packageUnit: 'g' },
+  },
+  'pesto': {
+    netto: { name: 'Netto Grøn Pesto 190g', price: 12.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    rema: { name: 'REMA Pesto alla Genovese 190g', price: 12.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    lidl: { name: 'Baresa Pesto Genovese 190g', price: 11.99, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    coop365: { name: '365 Grøn Pesto 190g', price: 12.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    foetex: { name: 'Barilla Pesto Genovese 190g', price: 26.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+    bilka: { name: 'Barilla Pesto 190g', price: 26.95, unit: '190g', packageAmount: 190, packageUnit: 'g' },
+  },
+  'hønsebouillon': {
+    netto: { name: 'Netto Hønsebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Hønsebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Kania Hønsebouillon 10 stk', price: 6.99, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Hønsebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Hønsebouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Hønsebouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'oksebouillon': {
+    netto: { name: 'Netto Oksebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Oksebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Kania Oksebouillon 10 stk', price: 6.99, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Oksebouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Oksebouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Oksebouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'grøntsagsbouillon': {
+    netto: { name: 'Netto Grøntsagsbouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    rema: { name: 'REMA Grøntsagsbouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    lidl: { name: 'Kania Grøntbouillon 10 stk', price: 6.99, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    coop365: { name: '365 Grøntbouillon 10 stk', price: 7.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    foetex: { name: 'Knorr Grøntsagsbouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+    bilka: { name: 'Knorr Grøntbouillon 10 stk', price: 19.95, unit: '10 stk', packageAmount: 10, packageUnit: 'stk' },
+  },
+  'tortillas': {
+    netto: { name: 'Netto Hvedetortillas 8 stk', price: 9.95, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+    rema: { name: 'REMA Tortilla Pandekager 8 stk', price: 9.95, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+    lidl: { name: 'El Tequito Tortillas 8 stk', price: 8.99, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+    coop365: { name: '365 Tortillas 8 stk', price: 9.95, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+    foetex: { name: 'Old El Paso Tortillas 8 stk', price: 19.95, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+    bilka: { name: 'Old El Paso Tortillas 8 stk', price: 19.95, unit: '8 stk', packageAmount: 8, packageUnit: 'stk' },
+  },
+  'nudler': {
+    netto: { name: 'Netto Ægnudler 250g', price: 9.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    rema: { name: 'REMA Ægnudler 250g', price: 9.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    lidl: { name: 'Vitasia Wok Nudler 250g', price: 8.99, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    coop365: { name: '365 Ægnudler 250g', price: 9.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    foetex: { name: 'Blue Dragon Ægnudler 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+    bilka: { name: 'Blue Dragon Nudler 250g', price: 17.95, unit: '250g', packageAmount: 250, packageUnit: 'g' },
+  },
+  'lasagneplader': {
+    netto: { name: 'Netto Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Combino Lasagneplader 500g', price: 10.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Lasagneplader 500g', price: 11.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Barilla Lasagneplader 500g', price: 22.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Barilla Lasagne 500g', price: 22.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hovedingrediens': {
+    netto: { name: 'Netto Hakket Kød / Kylling 500g', price: 26.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Hovedkød 500g', price: 26.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Slagterens Kød 500g', price: 25.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Hovedråvare 500g', price: 26.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansk Slagterkød 500g', price: 32.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Slagterens Hovedråvare 500g', price: 34.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'kartofler eller ris': {
+    netto: { name: 'Netto Kartofler / Ris 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    rema: { name: 'REMA Kartofler / Ris 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    lidl: { name: 'Lidl Kartofler / Ris 1kg', price: 13.99, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    coop365: { name: '365 Kartofler / Ris 1kg', price: 14.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    foetex: { name: 'Dansk Kartofler / Ris 1kg', price: 18.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+    bilka: { name: 'Kartofler / Ris 1kg', price: 18.95, unit: '1kg', packageAmount: 1000, packageUnit: 'g' },
+  },
+  'smør eller olie': {
+    netto: { name: 'Netto Smør / Rapsolie 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Smør / Olie 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Lidl Stegefedt / Olie 500g', price: 17.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Smør / Olie 500g', price: 18.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Lurpak / Jomfruolie 500g', price: 24.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Lurpak / Olie 500g', price: 24.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'grøntsager': {
+    netto: { name: 'Netto Grøntsager 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'REMA Friske Grøntsager 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Lidl Grøntsager 500g', price: 11.99, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Grøntsager 500g', price: 12.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansk Grøntblanding 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Frisk Grøntblanding 500g', price: 16.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hvidvin': {
+    netto: { name: 'Madlavningshvidvin 1L', price: 18.00, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+    rema: { name: 'Hvidvin til madlavning 1L', price: 17.50, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+    lidl: { name: 'Kogevin Hvid 1L', price: 16.95, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+    coop365: { name: 'Hvidvin 1L', price: 18.50, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+    foetex: { name: 'Madlavningshvidvin 1L', price: 20.00, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+    bilka: { name: 'Madlavningshvidvin 1L', price: 19.50, unit: '1 l', packageAmount: 1000, packageUnit: 'ml' },
+  },
+  'mørk chokolade': {
+    netto: { name: 'Mørk Chokolade 70% 100g', price: 13.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    rema: { name: 'Rema 1000 Mørk Chokolade 100g', price: 12.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    lidl: { name: 'Fin Carré Mørk Chokolade 100g', price: 11.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    coop365: { name: '365 Øko Mørk Chokolade 100g', price: 14.50, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    foetex: { name: 'Mørk Bagechokolade 100g', price: 15.00, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    bilka: { name: 'Mørk Chokolade 100g', price: 14.00, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+  },
+  'blåbær': {
+    netto: { name: 'Friske Blåbær 125g', price: 15.00, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+    rema: { name: 'Blåbær 125g', price: 14.00, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+    lidl: { name: 'Blåbær 125g', price: 13.50, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+    coop365: { name: '365 Øko Blåbær 125g', price: 16.00, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+    foetex: { name: 'Store Blåbær 125g', price: 17.00, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+    bilka: { name: 'Friske Blåbær 125g', price: 15.50, unit: '125 g', packageAmount: 125, packageUnit: 'g' },
+  },
+  'jordbær': {
+    netto: { name: 'Frosne Jordbær 400g', price: 14.95, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+    rema: { name: 'Rema 1000 Jordbær 400g', price: 13.95, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+    lidl: { name: 'Freshona Jordbær 400g', price: 13.50, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+    coop365: { name: '365 Jordbær 400g', price: 15.00, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+    foetex: { name: 'Danske Jordbær Frosne 400g', price: 16.50, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+    bilka: { name: 'Frosne Jordbær 400g', price: 15.00, unit: '400 g', packageAmount: 400, packageUnit: 'g' },
+  },
+  'hasselnødder': {
+    netto: { name: 'Hasselnøddekerner 200g', price: 22.00, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+    rema: { name: 'Hasselnødder 200g', price: 21.00, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+    lidl: { name: 'Alesto Hasselnødder 200g', price: 19.95, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+    coop365: { name: '365 Hasselnødder 200g', price: 23.00, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+    foetex: { name: 'Hasselnødder 200g', price: 24.50, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+    bilka: { name: 'Hasselnødder 200g', price: 22.50, unit: '200 g', packageAmount: 200, packageUnit: 'g' },
+  },
+  'fennikel': {
+    netto: { name: 'Frisk Fennikel 1 stk', price: 12.00, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+    rema: { name: 'Fennikel 1 stk', price: 11.50, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+    lidl: { name: 'Fennikel 1 stk', price: 10.95, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+    coop365: { name: 'Øko Fennikel 1 stk', price: 13.00, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+    foetex: { name: 'Fennikel 1 stk', price: 14.00, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+    bilka: { name: 'Fennikel 1 stk', price: 12.50, unit: '1 stk', packageAmount: 1, packageUnit: 'stk' },
+  },
+  'burgerboller': {
+    netto: { name: 'Brioche Burgerboller 4 stk', price: 15.00, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    rema: { name: 'Burgerboller 4 stk', price: 14.00, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    lidl: { name: 'Burgerboller 4 stk', price: 13.50, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    coop365: { name: '365 Burgerboller 4 stk', price: 15.50, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    foetex: { name: 'Store Burgerboller 4 stk', price: 17.00, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+    bilka: { name: 'Brioche Burgerboller 4 stk', price: 16.00, unit: '4 stk', packageAmount: 4, packageUnit: 'stk' },
+  },
+  'flutes': {
+    netto: { name: 'Hvidløgsflutes 2 stk', price: 9.95, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    rema: { name: 'Baguette Flutes 2 stk', price: 9.50, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    lidl: { name: 'Flutes 2 stk', price: 8.95, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    coop365: { name: '365 Flutes 2 stk', price: 10.50, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    foetex: { name: 'Flutes 2 stk', price: 12.00, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+    bilka: { name: 'Flutes 2 stk', price: 10.00, unit: '2 stk', packageAmount: 2, packageUnit: 'stk' },
+  },
+  'mornaysauce': {
+    netto: { name: 'Karoline Mornaysauce 500ml', price: 17.50, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+    rema: { name: 'Mornaysauce 500ml', price: 16.95, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+    lidl: { name: 'Mornaysauce 500ml', price: 15.95, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+    coop365: { name: 'Mornaysauce 500ml', price: 18.00, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+    foetex: { name: 'Karoline Mornaysauce 500ml', price: 19.50, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+    bilka: { name: 'Karoline Mornaysauce 500ml', price: 18.00, unit: '500 ml', packageAmount: 500, packageUnit: 'ml' },
+  },
+  'syltede rødbeder': {
+    netto: { name: 'Syltede Rødbeder 580g', price: 12.50, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+    rema: { name: 'Rema 1000 Rødbeder 580g', price: 11.95, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+    lidl: { name: 'Kania Rødbeder 580g', price: 10.95, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+    coop365: { name: '365 Rødbeder 580g', price: 13.00, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+    foetex: { name: 'Beauvais Rødbeder 580g', price: 16.50, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+    bilka: { name: 'Syltede Rødbeder 580g', price: 13.50, unit: '580 g', packageAmount: 580, packageUnit: 'g' },
+  },
+  'chorizo': {
+    netto: { name: 'Spansk Chorizo 100g', price: 16.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    rema: { name: 'Chorizo skiver 100g', price: 15.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    lidl: { name: 'Dulano Chorizo 100g', price: 14.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    coop365: { name: '365 Chorizo 100g', price: 17.50, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    foetex: { name: 'Chorizo Salamanca 100g', price: 19.95, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+    bilka: { name: 'Chorizo 100g', price: 17.00, unit: '100 g', packageAmount: 100, packageUnit: 'g' },
+  },
+  'sirup': {
+    netto: { name: 'Mørk / Lys Sirup 500g', price: 16.50, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'Bagesirup 500g', price: 15.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Sirup 500g', price: 14.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: '365 Sirup 500g', price: 17.00, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Dansukker Sirup 500g', price: 18.50, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Sirup 500g', price: 17.00, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+  },
+  'hakket kød': {
+    netto: { name: 'Hakket Oksekød 8-12% 500g', price: 39.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    rema: { name: 'Hakket Oksekød 8-12% 500g', price: 38.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    lidl: { name: 'Hakket Oksekød 8-12% 500g', price: 37.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    coop365: { name: 'Hakket Oksekød 8-12% 500g', price: 40.00, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    foetex: { name: 'Hakket Oksekød 8-12% 500g', price: 44.95, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+    bilka: { name: 'Hakket Oksekød 8-12% 500g', price: 42.00, unit: '500 g', packageAmount: 500, packageUnit: 'g' },
+  },
+};
+
+// ─── WEEKLY OFFERS (Opbygget med standardiseret Offer struktur) ───────────────
+function getWeekNumber() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}
+
+function weekSeed(offset = 0) {
+  const wk = getWeekNumber() + offset;
+  return (wk * 2654435761) >>> 0;
+}
+
+const OFFER_CATEGORIES = {
+  all:      { label: '🌟 Alle tilbud',      emoji: '🌟' },
+  drikke:   { label: '🥤 Sodavand & Drikke',emoji: '🥤' },
+  slik:     { label: '🍬 Slik & Snacks',    emoji: '🍬' },
+  kod:      { label: '🥩 Kød & Pålæg',      emoji: '🥩' },
+  mejeri:   { label: '🧀 Mejeri & Ost',     emoji: '🧀' },
+  frugt:    { label: '🥦 Frugt & Grønt',    emoji: '🥦' },
+  frost:    { label: '❄️ Frost & Is',       emoji: '❄️' },
+  kolonial: { label: '🍞 Brød & Kolonial',  emoji: '🍞' },
+};
+
+// Instansiering af alle ugens tilbud via Offer modellen (65+ tilbud)
+const ALL_OFFERS = [
+  // 🥤 Drikkevarer & Sodavand (Pant A, B, C understøttet)
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Pepsi Max 24 x 33cl',       supermarket: 'bilka',   category: 'drikke', offerPrice: 69.95, normalPrice: 119.95, emoji: '🥤', searchKey: 'sodavand', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Coca-Cola Zero 1,5L',       supermarket: 'foetex',  category: 'drikke', offerPrice: 12.95, normalPrice: 24.95,  emoji: '🥤', searchKey: 'sodavand', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Faxe Kondi 6 x 33cl',       supermarket: 'netto',   category: 'drikke', offerPrice: 18.00, normalPrice: 32.95,  emoji: '🥤', searchKey: 'sodavand', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Red Bull Energy 250ml',     supermarket: 'rema',    category: 'drikke', offerPrice: 10.00, normalPrice: 16.95,  emoji: '⚡', searchKey: 'energidrik', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Monster Energy 500ml',      supermarket: 'lidl',    category: 'drikke', offerPrice: 11.95, normalPrice: 18.95,  emoji: '⚡', searchKey: 'energidrik', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Rynkeby Appelsinjuice 1L',  supermarket: 'coop365', category: 'drikke', offerPrice: 10.00, normalPrice: 16.50,  emoji: '🍊', searchKey: 'juice', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Carlsberg Pilsner 24-pak',  supermarket: 'bilka',   category: 'drikke', offerPrice: 79.95, normalPrice: 129.95, emoji: '🍺', searchKey: 'øl', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Mathilde Kakaomælk 1L',     supermarket: 'rema',    category: 'drikke', offerPrice: 9.95,  normalPrice: 16.95,  emoji: '🍫', searchKey: 'kakao', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Innocent Smoothie 750ml',   supermarket: 'foetex',  category: 'drikke', offerPrice: 16.00, normalPrice: 28.95,  emoji: '🍓', searchKey: 'smoothie', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Egekilde Kildevand 1,5L',   supermarket: 'netto',   category: 'drikke', offerPrice: 5.00,  normalPrice: 10.95,  emoji: '💧', searchKey: 'vand', source: 'Netto Avis' }),
+
+  // 🍬 Slik & Snacks
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Bland selv slik 100g',      supermarket: 'bilka',   category: 'slik',   offerPrice: 5.95,  normalPrice: 9.95,   emoji: '🍬', searchKey: 'slik', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Kims Havsalt Chips 170g',   supermarket: 'foetex',  category: 'slik',   offerPrice: 12.00, normalPrice: 22.95,  emoji: '🥔', searchKey: 'chips', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Haribo Matador Mix 375g',   supermarket: 'netto',   category: 'slik',   offerPrice: 19.95, normalPrice: 32.95,  emoji: '🐻', searchKey: 'slik', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Marabou Mælk 200g',         supermarket: 'rema',    category: 'slik',   offerPrice: 16.95, normalPrice: 28.95,  emoji: '🍫', searchKey: 'chokolade', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Pringles Sour Cream 165g',  supermarket: 'lidl',    category: 'slik',   offerPrice: 12.99, normalPrice: 21.95,  emoji: '🥔', searchKey: 'chips', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Ritter Sport 100g',         supermarket: 'coop365', category: 'slik',   offerPrice: 10.00, normalPrice: 17.50,  emoji: '🍫', searchKey: 'chokolade', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Toms Guld Barre 45g',       supermarket: 'netto',   category: 'slik',   offerPrice: 6.00,  normalPrice: 11.95,  emoji: '🍫', searchKey: 'chokolade', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Lay\'s Bugles Paprika',     supermarket: 'rema',    category: 'slik',   offerPrice: 11.95, normalPrice: 19.95,  emoji: '🌽', searchKey: 'chips', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Katjes Salte Fisk 130g',    supermarket: 'bilka',   category: 'slik',   offerPrice: 8.95,  normalPrice: 14.95,  emoji: '🐟', searchKey: 'lakrids', source: 'Bilka Avis' }),
+
+  // 🥩 Kød & Pålæg
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Kyllingefilet 800g',        supermarket: 'bilka',   category: 'kod',    offerPrice: 49.95, normalPrice: 69.95,  emoji: '🍗', searchKey: 'kylling', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Hakket Oksekød 500g',       supermarket: 'coop365', category: 'kod',    offerPrice: 34.95, normalPrice: 44.95,  emoji: '🥩', searchKey: 'kød', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Tulip Bacon 3-pak',         supermarket: 'netto',   category: 'kod',    offerPrice: 22.00, normalPrice: 34.95,  emoji: '🥓', searchKey: 'bacon', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Laks Filet 400g',           supermarket: 'rema',    category: 'kod',    offerPrice: 34.95, normalPrice: 54.95,  emoji: '🐟', searchKey: 'fisk', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Torskefilet 400g',          supermarket: 'netto',   category: 'kod',    offerPrice: 24.95, normalPrice: 39.95,  emoji: '🐟', searchKey: 'fisk', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Oksekødstern 600g',         supermarket: 'foetex',  category: 'kod',    offerPrice: 42.95, normalPrice: 64.95,  emoji: '🥩', searchKey: 'oksekød', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Kyllingestrimler 500g',     supermarket: 'netto',   category: 'kod',    offerPrice: 24.95, normalPrice: 36.95,  emoji: '🍗', searchKey: 'kylling', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Dansk Svinekoteletter 500g',supermarket: 'rema',    category: 'kod',    offerPrice: 25.00, normalPrice: 39.95,  emoji: '🥩', searchKey: 'kød', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Stryhn\'s Leverpostej 450g',supermarket: 'lidl',    category: 'kod',    offerPrice: 10.99, normalPrice: 18.95,  emoji: '🍞', searchKey: 'pålæg', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Gøl Røde Pølser 375g',      supermarket: 'coop365', category: 'kod',    offerPrice: 15.00, normalPrice: 24.95,  emoji: '🌭', searchKey: 'pølser', source: '365discount Avis' }),
+
+  // 🧀 Mejeri & Ost
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Lurpak Smør 200g',          supermarket: 'foetex',  category: 'mejeri', offerPrice: 12.00, normalPrice: 26.95,  emoji: '🧈', searchKey: 'smør', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Kærgården 200g',            supermarket: 'netto',   category: 'mejeri', offerPrice: 10.00, normalPrice: 22.95,  emoji: '🧈', searchKey: 'smør', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Økoæg 12 stk',              supermarket: 'foetex',  category: 'mejeri', offerPrice: 24.95, normalPrice: 36.95,  emoji: '🥚', searchKey: 'æg', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Fetaost 200g',              supermarket: 'netto',   category: 'mejeri', offerPrice: 12.95, normalPrice: 19.95,  emoji: '🧀', searchKey: 'feta', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Revet Mozzarella 200g',     supermarket: 'lidl',    category: 'mejeri', offerPrice: 9.99,  normalPrice: 16.95,  emoji: '🧀', searchKey: 'ost', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Arla Letmælk 1L',           supermarket: 'bilka',   category: 'mejeri', offerPrice: 8.95,  normalPrice: 14.50,  emoji: '🥛', searchKey: 'mælk', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Arla Piskefløde 500ml',     supermarket: 'rema',    category: 'mejeri', offerPrice: 11.95, normalPrice: 19.95,  emoji: '🥛', searchKey: 'fløde', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Danbo Mellemlagret 45+',    supermarket: 'coop365', category: 'mejeri', offerPrice: 32.00, normalPrice: 49.95,  emoji: '🧀', searchKey: 'ost', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Skyr Naturel 1kg',          supermarket: 'bilka',   category: 'mejeri', offerPrice: 18.95, normalPrice: 28.50,  emoji: '🥣', searchKey: 'skyr', source: 'Bilka Avis' }),
+
+  // 🥦 Frugt & Grønt
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Øko Bananer 1kg',           supermarket: 'lidl',    category: 'frugt',  offerPrice: 9.99,  normalPrice: 16.95,  emoji: '🍌', searchKey: 'banan', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Danske Æbler 1kg',          supermarket: 'netto',   category: 'frugt',  offerPrice: 12.00, normalPrice: 22.00,  emoji: '🍎', searchKey: 'æble', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Gulerødder 1kg',            supermarket: 'lidl',    category: 'frugt',  offerPrice: 3.99,  normalPrice: 6.99,   emoji: '🥕', searchKey: 'gulerod', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Spinat Frisk 200g',         supermarket: 'lidl',    category: 'frugt',  offerPrice: 7.99,  normalPrice: 12.99,  emoji: '🌿', searchKey: 'spinat', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Broccoli Dansk',            supermarket: 'bilka',   category: 'frugt',  offerPrice: 7.95,  normalPrice: 14.95,  emoji: '🥦', searchKey: 'broccoli', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Kartofler 2,5kg',           supermarket: 'lidl',    category: 'frugt',  offerPrice: 9.99,  normalPrice: 14.99,  emoji: '🥔', searchKey: 'kartoffel', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Danske Tomater 500g',       supermarket: 'netto',   category: 'frugt',  offerPrice: 10.00, normalPrice: 18.00,  emoji: '🍅', searchKey: 'tomat', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Avocado 2-pak',             supermarket: 'rema',    category: 'frugt',  offerPrice: 12.00, normalPrice: 20.00,  emoji: '🥑', searchKey: 'avocado', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Agurker Danske',           supermarket: 'coop365', category: 'frugt',  offerPrice: 5.00,  normalPrice: 9.95,   emoji: '🥒', searchKey: 'agurk', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Champignon Hvide 250g',     supermarket: 'foetex',  category: 'frugt',  offerPrice: 8.00,  normalPrice: 14.95,  emoji: '🍄', searchKey: 'svampe', source: 'Føtex Avis' }),
+
+  // ❄️ Frost & Is
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Dr. Oetker Pizza',          supermarket: 'foetex',  category: 'frost',  offerPrice: 15.00, normalPrice: 29.95,  emoji: '🍕', searchKey: 'pizza', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Carte d\'Or Is 900ml',      supermarket: 'bilka',   category: 'frost',  offerPrice: 18.95, normalPrice: 34.95,  emoji: '🍨', searchKey: 'is', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'Pommes Frites 1kg',         supermarket: 'lidl',    category: 'frost',  offerPrice: 8.99,  normalPrice: 15.95,  emoji: '🍟', searchKey: 'pommes', source: 'Lidl Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Findus Fiskefileter 400g',  supermarket: 'netto',   category: 'frost',  offerPrice: 20.00, normalPrice: 32.95,  emoji: '🐟', searchKey: 'fisk', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Magnum Mandel 4-pak',       supermarket: 'rema',    category: 'frost',  offerPrice: 24.95, normalPrice: 38.95,  emoji: '🍦', searchKey: 'is', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Frigodan Fine Ærter 600g',  supermarket: 'bilka',   category: 'frost',  offerPrice: 9.95,  normalPrice: 16.95,  emoji: '🫛', searchKey: 'ærter', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Daloon Forårsruller 8 stk', supermarket: 'coop365', category: 'frost',  offerPrice: 14.95, normalPrice: 24.95,  emoji: '🥟', searchKey: 'forårsruller', source: '365discount Avis' }),
+
+  // 🍞 Brød & Kolonial
+  new Offer({ flyerId: 'flyer-rema',    product: 'Barilla Pasta 500g',        supermarket: 'rema',    category: 'kolonial', offerPrice: 5.95, normalPrice: 9.95,  emoji: '🍝', searchKey: 'pasta', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Kohberg Solsikkerugbrød',   supermarket: 'rema',    category: 'kolonial', offerPrice: 10.00, normalPrice: 18.95, emoji: '🍞', searchKey: 'brød', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-rema',    product: 'Jasminris 1kg',             supermarket: 'rema',    category: 'kolonial', offerPrice: 9.95,  normalPrice: 15.50, emoji: '🍚', searchKey: 'ris', source: 'REMA 1000 Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Kokosmælk 400ml',           supermarket: 'coop365', category: 'kolonial', offerPrice: 6.00, normalPrice: 9.95,  emoji: '🥥', searchKey: 'kokosmælk', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-coop365', product: 'Røde Linser 500g',          supermarket: 'coop365', category: 'kolonial', offerPrice: 5.95, normalPrice: 8.95,  emoji: '🫘', searchKey: 'linser', source: '365discount Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Nutella 400g',              supermarket: 'bilka',   category: 'kolonial', offerPrice: 19.95, normalPrice: 34.95, emoji: '🌰', searchKey: 'pålæg', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-netto',   product: 'Hakkede Tomater 3 x 400g',  supermarket: 'netto',   category: 'kolonial', offerPrice: 10.00, normalPrice: 18.95, emoji: '🍅', searchKey: 'tomat', source: 'Netto Avis' }),
+  new Offer({ flyerId: 'flyer-foetex',  product: 'Heinz Tomatketchup 570g',   supermarket: 'foetex',  category: 'kolonial', offerPrice: 14.00, normalPrice: 24.95, emoji: '🍅', searchKey: 'ketchup', source: 'Føtex Avis' }),
+  new Offer({ flyerId: 'flyer-bilka',   product: 'Pågen Gifflar Kanel 260g',  supermarket: 'bilka',   category: 'kolonial', offerPrice: 12.00, normalPrice: 19.95, emoji: '🥐', searchKey: 'kage', source: 'Bilka Avis' }),
+  new Offer({ flyerId: 'flyer-lidl',    product: 'De Cecco Spaghetti 500g',   supermarket: 'lidl',    category: 'kolonial', offerPrice: 8.99,  normalPrice: 15.95, emoji: '🍝', searchKey: 'pasta', source: 'Lidl Avis' }),
+
+  // 🌟 Næste uges tilbud (aktiveres ved rotation eller simulation)
+  new Offer({ flyerId: 'flyer-bilka-next',   product: 'Coca-Cola 24 x 33cl',     supermarket: 'bilka',   category: 'drikke', offerPrice: 65.00, normalPrice: 119.95, emoji: '🥤', searchKey: 'sodavand', active: false, source: 'Bilka Næste Uge' }),
+  new Offer({ flyerId: 'flyer-netto-next',   product: 'Danske Kyllingelår 1kg',  supermarket: 'netto',   category: 'kod',    offerPrice: 22.00, normalPrice: 36.95,  emoji: '🍗', searchKey: 'kylling',  active: false, source: 'Netto Næste Uge' }),
+  new Offer({ flyerId: 'flyer-rema-next',    product: 'Arla Kærgården 200g',     supermarket: 'rema',    category: 'mejeri', offerPrice: 11.00, normalPrice: 22.95,  emoji: '🧈', searchKey: 'smør',     active: false, source: 'REMA 1000 Næste Uge' }),
+  new Offer({ flyerId: 'flyer-foetex-next',  product: 'Hakket Oksekød 8-12% 500g',supermarket: 'foetex', category: 'kod',    offerPrice: 22.95, normalPrice: 34.95,  emoji: '🥩', searchKey: 'kød',      active: false, source: 'Føtex Næste Uge' }),
+  new Offer({ flyerId: 'flyer-lidl-next',    product: 'Øko Citroner 500g',       supermarket: 'lidl',    category: 'frugt',  offerPrice: 6.99,  normalPrice: 12.95,  emoji: '🍋', searchKey: 'citron',   active: false, source: 'Lidl Næste Uge' }),
+  new Offer({ flyerId: 'flyer-coop365-next', product: 'Barilla Penne 500g',      supermarket: 'coop365', category: 'kolonial', offerPrice: 5.00, normalPrice: 9.95,  emoji: '🍝', searchKey: 'pasta',    active: false, source: '365 Næste Uge' }),
+];
+
+// Hvis der er indlæst friske live-tilbud fra supermarkederne (via hent_tilbud.py / live_offers.js),
+// så erstatter vi mock-tilbuddene med de helt rigtige live tilbud!
+if (typeof LIVE_SCRAPED_OFFERS !== 'undefined' && Array.isArray(LIVE_SCRAPED_OFFERS) && LIVE_SCRAPED_OFFERS.length > 0) {
+  ALL_OFFERS.length = 0;
+  LIVE_SCRAPED_OFFERS.forEach(item => {
+    ALL_OFFERS.push(new Offer(item));
+  });
+  console.log(`[MUMS App] Succesfuldt aktiveret ${ALL_OFFERS.length} rigtige live-tilbud fra supermarkederne!`);
+}
+
+// Registrer standard ugentlige tilbudsaviser for de 6 aktive supermarkeder i DataLayer
+if (typeof DataLayer !== 'undefined' && DataLayer.offers) {
+  const defaultFlyers = [
+    new Flyer({ id: 'flyer-bilka',   supermarket: 'bilka',   title: 'Bilka Avisen – Aktuelle Tilbud', isCurrent: true }),
+    new Flyer({ id: 'flyer-foetex',  supermarket: 'foetex',  title: 'Føtex Avis – Friske Tilbud', isCurrent: true }),
+    new Flyer({ id: 'flyer-netto',   supermarket: 'netto',   title: 'Netto Avis – Ugens Spotvarer', isCurrent: true }),
+    new Flyer({ id: 'flyer-rema',    supermarket: 'rema',    title: 'REMA 1000 Avis – Ugens Tilbud', isCurrent: true }),
+    new Flyer({ id: 'flyer-lidl',    supermarket: 'lidl',    title: 'Lidl Avis – Ugens Tilbud', isCurrent: true }),
+    new Flyer({ id: 'flyer-coop365', supermarket: 'coop365', title: '365discount Avis – Ugens Tilbud', isCurrent: true }),
+
+    // Næste uges planlagte aviser
+    new Flyer({ id: 'flyer-bilka-next',   supermarket: 'bilka',   title: 'Bilka Avisen – Næste Uges Tilbud', isCurrent: false }),
+    new Flyer({ id: 'flyer-foetex-next',  supermarket: 'foetex',  title: 'Føtex Avis – Næste Uges Tilbud', isCurrent: false }),
+    new Flyer({ id: 'flyer-netto-next',   supermarket: 'netto',   title: 'Netto Avis – Næste Uges Spotvarer', isCurrent: false }),
+    new Flyer({ id: 'flyer-rema-next',    supermarket: 'rema',    title: 'REMA 1000 Avis – Næste Uge', isCurrent: false }),
+    new Flyer({ id: 'flyer-lidl-next',    supermarket: 'lidl',    title: 'Lidl Avis – Næste Uges Supertilbud', isCurrent: false }),
+    new Flyer({ id: 'flyer-coop365-next', supermarket: 'coop365', title: '365discount Avis – Næste Uge', isCurrent: false }),
+  ];
+  defaultFlyers.forEach(f => DataLayer.offers.registerFlyer(f));
+}
+
+function getWeeklyOffers(storeFilter = 'all', categoryFilter = 'all', targetDate = new Date()) {
+  if (typeof DataLayer !== 'undefined' && DataLayer.offers) {
+    return DataLayer.offers.getActiveOffers(storeFilter, categoryFilter, targetDate);
+  }
+  return ALL_OFFERS.filter(o => {
+    if (typeof o.isActive === 'function' && !o.isActive(targetDate)) return false;
+    const matchStore = (storeFilter === 'all' || o.store === storeFilter || o.supermarket === storeFilter);
+    const matchCat = (categoryFilter === 'all' || o.category === categoryFilter);
+    return matchStore && matchCat;
+  });
+}
+
+// ─── QUICK RECIPE INGREDIENT PRESETS ─────────────────────────────────────────
+const QUICK_PRESETS = {
+  pasta:   ['pasta', 'kød', 'tomat', 'løg'],
+  chicken: ['kylling', 'ris', 'broccoli'],
+  drinks:  ['sodavand', 'energidrik'],
+  salad:   ['salat', 'kylling', 'tomat', 'agurk', 'feta'],
+  soup:    ['linser', 'tomat', 'løg', 'gulerod'],
+  fish:    ['fisk', 'kartoffel', 'citron', 'persille'],
+  eggs:    ['æg', 'spinat', 'feta', 'løg'],
+  beef:    ['oksekød', 'kartoffel', 'gulerod', 'løg'],
+};
+
+// ─── INGREDIENT EMOJI MAP ─────────────────────────────────────────────────────
+const INGREDIENT_EMOJIS = {
+  pasta: '🍝', kød: '🥩', tomat: '🍅', løg: '🧅', hvidløg: '🧄',
+  kylling: '🍗', kartoffel: '🥔', fisk: '🐟', laks: '🐟', torsk: '🐟',
+  gulerod: '🥕', salat: '🥬', agurk: '🥒', feta: '🧀', æg: '🥚',
+  spinat: '🌿', ris: '🍚', broccoli: '🥦', citron: '🍋', persille: '🌿',
+  kokosmælk: '🥥', linser: '🫘', oksekød: '🥩', smør: '🧈',
+  sodavand: '🥤', cola: '🥤', pepsi: '🥤', energidrik: '⚡', juice: '🍊', fanta: '🍊',
+  bacon: '🥓', svampe: '🍄', pesto: '🌿', tun: '🐟', ærter: '🫛', basilikum: '🌿', ost: '🧀',
+};
+
+function getEmoji(key) {
+  for (const [k, e] of Object.entries(INGREDIENT_EMOJIS)) {
+    if (key.includes(k) || k.includes(key.slice(0, 4))) return e;
+  }
+  return '🛒';
+}

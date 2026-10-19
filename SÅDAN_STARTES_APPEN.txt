@@ -1,0 +1,37 @@
+# 🍲 MUMS App – Madplan & Prissammenligning
+
+Velkommen til MUMS App! En komplet dansk madplanlægnings- og prissammenligningsapp udviklet specielt til de danske supermarkeder:
+- **Netto** 🟡
+- **Føtex** 🟡
+- **Bilka** 🔵
+- **REMA 1000** 🔴
+- **Lidl** 🔵
+- **365discount** 🟢
+
+---
+
+## 🚀 Sådan starter du appen:
+
+Det er super simpelt og kræver ingen installation af programmer:
+
+1. **Start appen:**
+   - Dobbeltklik på `Start_MUMS_App.bat` (eller åbn `index.html` direkte i Chrome, Edge, Safari eller Firefox).
+   - Appen åbner straks i din standardbrowser!
+
+2. **Hent nye tilbudsaviser (hver uge):**
+   - Dobbeltklik på `Opdater_Tilbud.bat`.
+   - Den henter automatisk 300 helt friske tilbud og billeder direkte fra supermarkedernes nyeste tilbudsaviser.
+
+---
+
+## ✨ Hovedfunktioner:
+
+- 🍲 **5.900+ Danske Opskrifter**: Søg direkte på hvad du har lyst til at spise (fx *lasagne, flæskesteg, kylling i karry, laks*) eller de ingredienser du vil bruge.
+- 💰 **Prissammenligning**: Sammenlign automatisk hvad retten koster i de 6 forskellige supermarkeder med fulde butikspakker.
+- 🎯 **Fokusvælger**: Vælg hvad appen skal prioritere (Billigste pris, Færrest kulhydrater, Mest protein, Færrest kalorier, Hurtigste tilberedning).
+- 🏷️ **Tilbudsaviser**: Gennemse alle ugens aktuelle tilbud med ægte billeder og priser.
+- 🛒 **Smart Indkøbsliste**: Grupperer automatisk varer pr. butik, beregner pant og fulde pakker.
+- 🌙 **Dark Mode / Lyst tema**: Skift nemt i Indstillinger eller Profil.
+- 🌾 **Allergisystem**: Filtrerer automatisk opskrifter mod gluten, laktose, nødder, æg, fisk, soja og svinekød.
+
+God fornøjelse med madlavningen! 🎉

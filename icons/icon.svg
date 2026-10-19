@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="mumsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+  
+  <!-- App Icon Background Squircle -->
+  <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#mumsGrad)" />
+  
+  <!-- Subtle decorative ring -->
+  <circle cx="256" cy="230" r="165" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6" />
+  
+  <!-- Cloche / Bowl & Hat Graphic -->
+  <g>
+    <!-- Chef Hat Base / Dome -->
+    <path d="M176 220 C140 180 160 110 216 120 C236 80 290 80 306 120 C360 100 376 180 340 220 Z" fill="#ffffff" />
+    <!-- Hat band -->
+    <rect x="176" y="226" width="160" height="28" rx="14" fill="#fef08a" />
+    
+    <!-- Smile / Plate Arc below -->
+    <path d="M160 280 C210 340 302 340 352 280" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" />
+    
+    <!-- Sparkle accent -->
+    <path d="M256 315 L252 305 L242 301 L252 297 L256 287 L260 297 L270 301 L260 305 Z" fill="#fef08a" />
+  </g>
+  
+  <!-- MUMS Typography -->
+  <text x="256" y="415" font-family="system-ui, -apple-system, sans-serif" font-size="76" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">MUMS</text>
+  <text x="256" y="450" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="700" fill="#a7f3d0" text-anchor="middle" letter-spacing="2">MAD &amp; TILBUD</text>
+</svg>
