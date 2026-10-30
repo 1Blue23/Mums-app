@@ -4719,8 +4719,8 @@ function renderMealPlanView() {
       `;
     } else {
       const sharedHTML = stats.sharedItems.length > 0 ? `
-        <div style="margin-top:8px;">
-          <strong style="font-size:0.8rem; display:block; margin-bottom:4px; color:#14532d;">♻️ Genbrugte råvarer i ugens madplan (${stats.sharedItems.length} råvarer deles):</strong>
+        <div class="waste-shared-section">
+          <strong class="waste-section-title">♻️ Genbrugte råvarer i ugens madplan (${stats.sharedItems.length} råvarer deles):</strong>
           <div class="waste-chips-wrap">
             ${stats.sharedItems.map(it => `
               <span class="waste-tag-chip">🌱 ${escapeHtml(it.name)} (${Array.from(it.days).join(' + ')})</span>
@@ -4728,23 +4728,23 @@ function renderMealPlanView() {
           </div>
         </div>
       ` : `
-        <p style="margin:4px 0 6px 0; font-size:0.8rem; color:#854d0e;">⚠️ Du har endnu ingen råvarer der deles mellem retterne. Vælg retter der bruger samme grønt eller mejeriprodukter for at spare penge.</p>
+        <p class="waste-empty-hint">⚠️ Du har endnu ingen råvarer der deles mellem retterne. Vælg retter der bruger samme grønt eller mejeriprodukter for at spare penge.</p>
       `;
 
       const recsHTML = stats.zeroWasteRecommendations.length > 0 ? `
-        <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #86efac;">
-          <strong style="font-size:0.82rem; display:block; color:#166534; margin-bottom:6px;">💡 Undgå madspild: Tilføj disse retter der bruger dine rester:</strong>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <div class="waste-recs-section">
+          <strong class="waste-recs-title">💡 Undgå madspild: Tilføj disse retter der bruger dine rester:</strong>
+          <div class="waste-recs-grid">
             ${stats.zeroWasteRecommendations.map(rec => {
               const targetDay = stats.emptyDays[0]?.key || 'sunday';
               const targetLabel = stats.emptyDays[0]?.label || 'Søndag';
               return `
-                <div style="background:#ffffff; border:1px solid #86efac; border-radius:8px; padding:8px 10px; font-size:0.8rem; flex:1; min-width:200px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                  <div>
-                    <strong>${escapeHtml(rec.recipe.name)}</strong>
-                    <div style="font-size:0.72rem; color:#15803d;">Bruger dine rester: ${escapeHtml(rec.matchedNames.slice(0, 3).join(', '))}</div>
+                <div class="waste-rec-card">
+                  <div class="waste-rec-info">
+                    <strong class="waste-rec-dish-name">${escapeHtml(rec.recipe.name)}</strong>
+                    <div class="waste-rec-leftovers">Bruger dine rester: <span>${escapeHtml(rec.matchedNames.slice(0, 3).join(', '))}</span></div>
                   </div>
-                  <button type="button" class="btn btn-primary btn-sm" style="font-size:0.75rem; padding:4px 8px; white-space:nowrap;" onclick="setMealPlanDay('${targetDay}', '${rec.recipe.id}')">
+                  <button type="button" class="btn btn-primary btn-sm waste-rec-add-btn" onclick="setMealPlanDay('${targetDay}', '${rec.recipe.id}')">
                     + Sæt på ${targetLabel}
                   </button>
                 </div>

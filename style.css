@@ -4597,23 +4597,41 @@ body.dark-theme .offer-savings-tag {
 .mealplan-waste-insight-box {
   background: #f0fdf4;
   border: 1.5px solid #86efac;
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
+  border-radius: var(--radius);
+  padding: 16px 18px;
   color: #14532d;
 }
 .mealplan-waste-insight-box h4 {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #166534;
+  color: #15803d;
   margin-bottom: 6px;
 }
 .mealplan-waste-insight-box p {
-  font-size: 0.82rem;
-  color: #15803d;
+  font-size: 0.86rem;
+  color: #166534;
   margin-bottom: 8px;
+  line-height: 1.4;
+}
+.waste-section-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 6px;
+  color: #15803d;
+}
+.waste-empty-hint {
+  margin: 6px 0;
+  font-size: 0.82rem;
+  color: #854d0e;
+  background: #fefce8;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #fef08a;
 }
 .waste-chips-wrap {
   display: flex;
@@ -4626,11 +4644,68 @@ body.dark-theme .offer-savings-tag {
   gap: 4px;
   background: #dcfce7;
   color: #166534;
-  border: 1px solid #bbf7d0;
+  border: 1px solid #86efac;
   border-radius: 999px;
   padding: 4px 10px;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 700;
+}
+.waste-recs-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1.5px dashed #86efac;
+}
+.waste-recs-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  display: block;
+  color: #15803d;
+  margin-bottom: 8px;
+}
+.waste-recs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.waste-rec-card {
+  background: #ffffff;
+  border: 1.5px solid #86efac;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.waste-rec-info {
+  flex: 1;
+  min-width: 0;
+}
+.waste-rec-dish-name {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.waste-rec-leftovers {
+  font-size: 0.74rem;
+  color: #15803d;
+  margin-top: 3px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.waste-rec-leftovers span {
+  font-weight: 500;
+  color: #166534;
+}
+.waste-rec-add-btn {
+  font-size: 0.75rem;
+  padding: 5px 10px;
+  white-space: nowrap;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .mealplan-section-header {
@@ -4928,16 +5003,57 @@ body.dark-theme .mealplan-day-empty {
 body.dark-theme .mealplan-waste-insight-box {
   background: #064e3b !important;
   border-color: #059669 !important;
+  color: #ecfdf5 !important;
+}
+body.dark-theme .mealplan-waste-insight-box h4 {
+  color: #6ee7b7 !important;
+}
+body.dark-theme .mealplan-waste-insight-box p {
   color: #d1fae5 !important;
 }
-body.dark-theme .mealplan-waste-insight-box h4,
-body.dark-theme .mealplan-waste-insight-box p {
-  color: #a7f3d0 !important;
+body.dark-theme .waste-section-title {
+  color: #6ee7b7 !important;
+}
+body.dark-theme .waste-empty-hint {
+  background: #422006 !important;
+  color: #fef08a !important;
+  border-color: #854d0e !important;
 }
 body.dark-theme .waste-tag-chip {
-  background: #065f46 !important;
+  background: #022c22 !important;
+  color: #6ee7b7 !important;
+  border-color: #059669 !important;
+}
+body.dark-theme .waste-recs-section {
+  border-top-color: #047857 !important;
+}
+body.dark-theme .waste-recs-title {
   color: #a7f3d0 !important;
+}
+body.dark-theme .waste-rec-card {
+  background: #0f172a !important;
+  border-color: #059669 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35) !important;
+}
+body.dark-theme .waste-rec-dish-name {
+  color: #f8fafc !important;
+}
+body.dark-theme .waste-rec-leftovers {
+  color: #34d399 !important;
+}
+body.dark-theme .waste-rec-leftovers span {
+  color: #a7f3d0 !important;
+}
+body.dark-theme .mealplan-dish-meta {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mealplan-waste-pill {
+  background: #022c22 !important;
+  color: #6ee7b7 !important;
   border-color: #047857 !important;
+}
+body.dark-theme .mealplan-day-picker-btn .day-status {
+  color: #94a3b8 !important;
 }
 body.dark-theme .mp-store-price-chip {
   background: #0f172a !important;
