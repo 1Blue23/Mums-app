@@ -715,25 +715,53 @@
         </button>
       </div>
 
-      <!-- MINE ALLERGIER & KOSTHENSYN -->
+      <!-- UØNSKEDE INGREDIENSER & ALLERGIER -->
       <div class="card profile-allergy-card">
-        <h3 class="section-title">🌾 Mine Allergier & Kosthensyn</h3>
-        <p class="section-subtitle">Vælg dine allergier, så MUMS automatisk kan markere opskrifter og beskytte dig mod uønskede ingredienser.</p>
+        <h3 class="section-title">🚫 Uønskede Ingredienser & Allergier</h3>
+        <p class="section-subtitle">Vælg eller skriv præcis de ingredienser og allergener du ikke kan tåle. MUMS advarer dig og kan skjule opskrifter automatisk.</p>
         
-        <div class="allergy-checkbox-grid" id="profileAllergyGrid" style="margin-top:12px;">
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="gluten" /> 🌾 Glutenfri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="laktose" /> 🥛 Laktosefri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="noedder" /> 🥜 Nøddefri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="aeg" /> 🥚 Æggefri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="fisk" /> 🐟 Fisk- & skaldyrsfri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="soja" /> 🌱 Sojafri</label>
-          <label class="allergy-check-pill"><input type="checkbox" class="profile-allergy-check" value="svinekoed" /> 🥩 Ingen svinekød</label>
+        <!-- Input row to type any custom ingredient -->
+        <div class="allergy-input-wrapper" style="margin-top: 14px;">
+          <label for="profileAllergyInput" style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:6px;">Tilføj en ingrediens eller allergi du ikke kan tåle:</label>
+          <div class="allergy-input-row">
+            <input type="text" id="profileAllergyInput" class="allergy-text-input" placeholder="Skriv f.eks. tomat, svampe, hvidløg, peanuts, laktose..." autocomplete="off" />
+            <button type="button" id="btnAddProfileAllergy" class="btn btn-primary" style="white-space:nowrap; padding:8px 16px;">+ Tilføj</button>
+          </div>
         </div>
 
-        <div class="profile-auto-filter-row" style="margin-top:14px; padding:10px 12px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <!-- Selected excluded ingredients tags -->
+        <div style="margin-top: 14px;">
+          <label style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:6px; color:var(--gray-600);">Dine valgte uønskede ingredienser / allergener:</label>
+          <div id="profileAllergyTagsContainer" class="allergy-tags-container">
+            <span class="allergy-tags-empty" style="font-size:0.82rem; color:var(--gray-500); font-style:italic;">Ingen ingredienser tilføjet endnu. Skriv en ovenfor eller vælg herunder.</span>
+          </div>
+        </div>
+
+        <!-- Quick-add suggestion pills -->
+        <div style="margin-top: 16px;">
+          <label style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:6px; color:var(--gray-600);">Hurtigvalg (klik for at tilføje / fjerne):</label>
+          <div class="allergy-quick-pills-wrap" id="profileAllergyQuickPills">
+            <button type="button" class="allergy-quick-pill" data-allergy="gluten">🌾 Gluten / Hvede</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="laktose">🥛 Laktose / Mælk</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="noedder">🥜 Nødder</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="aeg">🥚 Æg</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="fisk">🐟 Fisk & Skaldyr</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="svinekoed">🥩 Svinekød</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="tomat">🍅 Tomat</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="hvidloeg">🧄 Hvidløg</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="loeg">🧅 Løg</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="svampe">🍄 Svampe</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="chili">🌶️ Chili</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="jordbaer">🍓 Jordbær</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="soja">🌱 Soja</button>
+            <button type="button" class="allergy-quick-pill" data-allergy="sesam">✨ Sesam</button>
+          </div>
+        </div>
+
+        <div class="profile-auto-filter-row" style="margin-top:16px; padding:10px 12px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:space-between; gap:12px;">
           <div>
-            <strong style="font-size:0.88rem; display:block;">Skjul opskrifter med mine allergener automatisk</strong>
-            <p style="font-size:0.75rem; margin:2px 0 0 0;">Når slået til, filtreres opskrifter der indeholder dine allergener automatisk fra visningen.</p>
+            <strong style="font-size:0.88rem; display:block;">Skjul opskrifter med mine uønskede ingredienser automatisk</strong>
+            <p style="font-size:0.75rem; margin:2px 0 0 0;">Når slået til, filtreres opskrifter der indeholder dine valgte ingredienser automatisk fra søgning og visning.</p>
           </div>
           <label class="toggle-switch" style="flex-shrink:0;">
             <input type="checkbox" id="profileAutoFilterAllergies" />
@@ -741,8 +769,8 @@
           </label>
         </div>
 
-        <button id="btnSaveProfileAllergies" class="btn btn-primary" style="margin-top:14px;">
-          💾 Gem allergier & kosthensyn
+        <button id="btnSaveProfileAllergies" class="btn btn-primary" style="margin-top:14px; width:100%;">
+          💾 Gem uønskede ingredienser
         </button>
       </div>
 
@@ -1043,19 +1071,29 @@
           </div>
 
           <div id="authAllergiesGroup" class="form-group hidden">
-            <label class="setting-label">Har du allergier eller kosthensyn? (valgfrit):</label>
-            <p style="font-size:0.75rem; color:var(--gray-500); margin:-2px 0 6px 0;">MUMS advarer og tilpasser opskrifterne efter dine valg.</p>
-            <div class="allergy-checkbox-grid">
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="gluten" /> 🌾 Glutenfri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="laktose" /> 🥛 Laktosefri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="noedder" /> 🥜 Nøddefri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="aeg" /> 🥚 Æggefri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="fisk" /> 🐟 Fisk- & skaldyrsfri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="soja" /> 🌱 Sojafri</label>
-              <label class="allergy-check-pill"><input type="checkbox" name="authAllergy" value="svinekoed" /> 🥩 Ingen svinekød</label>
+            <label class="setting-label">Har du ingredienser du ikke kan tåle? (valgfrit):</label>
+            <p style="font-size:0.75rem; color:var(--gray-500); margin:-2px 0 8px 0;">Skriv eller klik på de ingredienser du vil undgå. Du kan altid tilpasse det i profilen.</p>
+            
+            <div class="allergy-input-row" style="margin-bottom:8px;">
+              <input type="text" id="authAllergyInput" class="allergy-text-input" placeholder="f.eks. tomat, svampe, nødder, laktose..." />
+              <button type="button" id="btnAddAuthAllergy" class="btn btn-sm btn-secondary" style="white-space:nowrap;">+ Tilføj</button>
+            </div>
+
+            <div id="authAllergyTagsContainer" class="allergy-tags-container" style="margin-bottom:8px; min-height:36px;">
+              <span class="allergy-tags-empty" style="font-size:0.75rem; color:var(--gray-500); font-style:italic;">Ingen valgt endnu</span>
+            </div>
+
+            <div class="allergy-quick-pills-wrap" id="authAllergyQuickPills">
+              <button type="button" class="allergy-quick-pill" data-allergy="gluten">🌾 Gluten</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="laktose">🥛 Laktose</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="noedder">🥜 Nødder</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="aeg">🥚 Æg</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="fisk">🐟 Fisk</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="svinekoed">🥩 Svinekød</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="tomat">🍅 Tomat</button>
+              <button type="button" class="allergy-quick-pill" data-allergy="svampe">🍄 Svampe</button>
             </div>
           </div>
-
           <button type="submit" id="authSubmitBtn" class="btn-primary auth-submit-btn">Log ind</button>
           <p id="authErrorMsg" class="auth-error-msg hidden"></p>
         </form>

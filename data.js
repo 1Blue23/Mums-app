@@ -1588,55 +1588,118 @@ const DataLayer = {
     },
   },
 
-  // ─── ALLERGEN DETECTION & FILTERING ─────────────────────────────────────────
+  // ─── ALLERGEN & INGREDIENT EXCLUSION ENGINE ─────────────────────────────────
   allergens: {
     ALLERGEN_MAP: {
       gluten: {
-        label: 'Glutenfri',
-        keywords: ['hvedemel', 'mel', 'pasta', 'spaghetti', 'lasagneplader', 'brød', 'rasp', 'nudler', 'bulgur', 'couscous', 'øl', 'dej', 'hvede', 'rugmel', 'spelt']
+        label: 'Gluten / Hvede',
+        keywords: ['gluten', 'hvedemel', 'mel', 'pasta', 'spaghetti', 'lasagneplader', 'brød', 'rasp', 'nudler', 'bulgur', 'couscous', 'øl', 'dej', 'hvede', 'rugmel', 'spelt']
       },
       laktose: {
-        label: 'Laktosefri / Mælkefri',
-        keywords: ['fløde', 'mælk', 'smør', 'ost', 'parmesan', 'mozzarella', 'creme fraiche', 'crème fraîche', 'yoghurt', 'feta', 'hytteost', 'piskefløde', 'mascarpone', 'ricotta', 'kærgården']
+        label: 'Laktose / Mælk',
+        keywords: ['laktose', 'mælk', 'fløde', 'smør', 'ost', 'parmesan', 'mozzarella', 'creme fraiche', 'crème fraîche', 'yoghurt', 'feta', 'hytteost', 'piskefløde', 'mascarpone', 'ricotta', 'kærgården']
       },
       noedder: {
-        label: 'Nøddefri',
-        keywords: ['nødder', 'mandler', 'valnødder', 'hasselnødder', 'cashew', 'peanuts', 'jordnødder', 'pinjekerner', 'pistacie', 'pekannødder']
+        label: 'Nødder',
+        keywords: ['nødder', 'nød', 'mandler', 'mandel', 'valnødder', 'valnød', 'hasselnødder', 'hasselnød', 'cashew', 'peanuts', 'peanut', 'jordnødder', 'jordnød', 'pinjekerner', 'pistacie', 'pekannødder']
       },
       aeg: {
-        label: 'Æggefri',
-        keywords: ['æg', 'æggeblomme', 'æggehvide', 'mayonnaise', 'æggesnaps']
+        label: 'Æg',
+        keywords: ['æg', 'æggeblomme', 'æggeblommer', 'æggehvide', 'æggehvider', 'mayonnaise', 'æggesnaps']
       },
       fisk: {
-        label: 'Fisk- & Skaldyrsfri',
-        keywords: ['fisk', 'laks', 'torsk', 'tun', 'rejer', 'muslinger', 'krabbe', 'hummer', 'fiskesovs', 'ansjoser', 'sild', 'ørred']
+        label: 'Fisk & Skaldyr',
+        keywords: ['fisk', 'laks', 'torsk', 'tun', 'rejer', 'reje', 'muslinger', 'musling', 'krabbe', 'krabber', 'hummer', 'fiskesovs', 'fiskesauce', 'ansjoser', 'sild', 'ørred', 'skaldyr']
       },
       soja: {
-        label: 'Sojafri',
+        label: 'Soja',
         keywords: ['soya', 'soja', 'tofu', 'edamame']
       },
       svinekoed: {
-        label: 'Uden svinekød',
-        keywords: ['svinekød', 'svin', 'bacon', 'pølse', 'pølser', 'skinke', 'medister', 'flæsk', 'kotelet', 'hakket svin']
+        label: 'Svinekød',
+        keywords: ['svinekød', 'svin', 'bacon', 'pølse', 'pølser', 'skinke', 'medister', 'flæsk', 'kotelet', 'koteletter', 'hakket svin']
+      },
+      svampe: {
+        label: 'Svampe',
+        keywords: ['svamp', 'svampe', 'champignon', 'champignoner', 'kantarel', 'kantareller', 'østershatte', 'portobello', 'trøffel', 'trøfler']
+      },
+      tomat: {
+        label: 'Tomat',
+        keywords: ['tomat', 'tomater', 'cherrytomat', 'cherrytomater', 'tomatpuré', 'tomatpure', 'hakkede tomater', 'flåede tomater', 'soltørrede tomater', 'passata']
+      },
+      loeg: {
+        label: 'Løg',
+        keywords: ['løg', 'rødløg', 'skalotteløg', 'forårsløg', 'salatløg', 'løgpulver']
+      },
+      hvidloeg: {
+        label: 'Hvidløg',
+        keywords: ['hvidløg', 'hvidløgsfed', 'hvidløgspulver', 'hvidløgsfedd']
+      },
+      chili: {
+        label: 'Chili',
+        keywords: ['chili', 'chilier', 'chiliflager', 'chilipulver', 'jalapeno', 'jalapeño', 'cayenne', 'sambal oelek', 'sriracha', 'habanero']
+      },
+      jordbaer: {
+        label: 'Jordbær',
+        keywords: ['jordbær', 'jordbærsyltetøj']
+      },
+      sesam: {
+        label: 'Sesam',
+        keywords: ['sesam', 'sesamfrø', 'sesamolie', 'tahina', 'tahin']
+      },
+      selleri: {
+        label: 'Selleri',
+        keywords: ['selleri', 'knoldselleri', 'blegselleri', 'stangselleri']
+      },
+      sennep: {
+        label: 'Sennep',
+        keywords: ['sennep', 'dijonsennep', 'sennepskorn', 'sennepsfrø']
       }
     },
 
     getLabel(key) {
-      return this.ALLERGEN_MAP[key]?.label || key;
+      if (!key) return '';
+      const clean = String(key).trim().toLowerCase();
+      if (this.ALLERGEN_MAP[clean]) {
+        return this.ALLERGEN_MAP[clean].label;
+      }
+      for (const [mapKey, item] of Object.entries(this.ALLERGEN_MAP)) {
+        if (mapKey === clean || item.label.toLowerCase() === clean) {
+          return item.label;
+        }
+      }
+      return clean.charAt(0).toUpperCase() + clean.slice(1);
+    },
+
+    checkIngredientMatch(searchTerm, targetText) {
+      if (!searchTerm || !targetText) return false;
+      const term = searchTerm.trim().toLowerCase();
+      const target = targetText.toLowerCase();
+
+      if (target.includes(term)) return true;
+
+      // Handle common Danish endings (plural/stem)
+      let stem = term;
+      if (stem.endsWith('er') && stem.length > 4) stem = stem.slice(0, -2);
+      else if (stem.endsWith('e') && stem.length > 3) stem = stem.slice(0, -1);
+      else if (stem.endsWith('s') && stem.length > 3) stem = stem.slice(0, -1);
+
+      if (stem.length >= 3 && target.includes(stem)) return true;
+
+      return false;
     },
 
     detectAllergens(recipe) {
       if (!recipe) return [];
       const found = new Set();
       const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : `${i.name || ''} ${i.searchKey || ''}`)).join(' ').toLowerCase();
+      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ${i.name || ''} )).join(' ').toLowerCase();
       const titleText = (recipe.name || '').toLowerCase() + ' ' + (recipe.desc || '').toLowerCase();
       const combined = ingTexts + ' ' + titleText;
 
       for (const [allergenKey, info] of Object.entries(this.ALLERGEN_MAP)) {
         for (const kw of info.keywords) {
-          const regex = new RegExp('(?:^|[\\s,.!?;:()/-])' + kw + '(?:$|[\\s,.!?;:()/-])', 'i');
-          if (regex.test(combined) || combined.includes(kw)) {
+          if (this.checkIngredientMatch(kw, combined)) {
             found.add(allergenKey);
             break;
           }
@@ -1646,11 +1709,52 @@ const DataLayer = {
     },
 
     recipeContainsAllergen(recipe, userAllergies = []) {
-      if (!userAllergies || userAllergies.length === 0) return [];
-      const recipeAllergens = this.detectAllergens(recipe);
-      return userAllergies.filter(a => recipeAllergens.includes(a));
+      if (!recipe || !Array.isArray(userAllergies) || userAllergies.length === 0) return [];
+
+      const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ${i.name || ''} )).join(' ').toLowerCase();
+      const titleDescText = ${recipe.name || ''} .toLowerCase();
+      const combinedRecipeText = ${ingTexts} ;
+
+      const matched = new Set();
+
+      for (const rawItem of userAllergies) {
+        if (!rawItem) continue;
+        const item = String(rawItem).trim().toLowerCase();
+        if (!item) continue;
+
+        // 1. Is it a known mapped allergen group? (e.g. 'gluten', 'laktose', 'tomat', 'svampe' etc.)
+        const mapped = this.ALLERGEN_MAP[item];
+        if (mapped) {
+          const hasGroupMatch = mapped.keywords.some(kw => this.checkIngredientMatch(kw, combinedRecipeText));
+          if (hasGroupMatch) {
+            matched.add(item);
+            continue;
+          }
+        }
+
+        // 2. Check if the raw item matches any keywords of a known allergen group
+        let foundViaCategory = false;
+        for (const [mapKey, mapInfo] of Object.entries(this.ALLERGEN_MAP)) {
+          if (mapInfo.keywords.includes(item)) {
+            if (this.checkIngredientMatch(item, combinedRecipeText)) {
+              matched.add(item);
+              foundViaCategory = true;
+              break;
+            }
+          }
+        }
+        if (foundViaCategory) continue;
+
+        // 3. Custom free-text ingredient check (e.g. 'peberfrugt', 'avokado', 'koriander'...)
+        if (this.checkIngredientMatch(item, combinedRecipeText)) {
+          matched.add(item);
+        }
+      }
+
+      return Array.from(matched);
     }
-  },
+  }
 };
 
 if (typeof window !== 'undefined') {

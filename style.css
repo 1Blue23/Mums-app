@@ -3018,7 +3018,104 @@ button, input, select {
   pointer-events: none;
 }
 
-/* ===== ALLERGIES & DIETARY RESTRICTIONS ===== */
+/* ===== ALLERGIES & CUSTOM INGREDIENTS EXCLUSION ===== */
+.allergy-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.allergy-text-input {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 0.88rem;
+  border: 1.5px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--white);
+  color: var(--gray-800);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.allergy-text-input:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.15);
+}
+
+.allergy-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--gray-50);
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius-sm);
+  min-height: 42px;
+  align-items: center;
+}
+
+.allergy-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  animation: fadeIn 0.15s ease;
+}
+
+.allergy-tag-pill .tag-remove-btn {
+  background: none;
+  border: none;
+  color: #c2410c;
+  cursor: pointer;
+  padding: 0 0 0 2px;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, transform 0.15s;
+}
+.allergy-tag-pill .tag-remove-btn:hover {
+  color: #7c2d12;
+  transform: scale(1.2);
+}
+
+.allergy-quick-pills-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.allergy-quick-pill {
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+  color: var(--gray-700);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.allergy-quick-pill:hover {
+  border-color: #ea580c;
+  color: #ea580c;
+  background: #fff7ed;
+}
+.allergy-quick-pill.selected {
+  background: #ea580c !important;
+  border-color: #c2410c !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(234, 88, 12, 0.3);
+}
+
+/* ===== ALLERGIES & DIETARY RESTRICTIONS (LEGACY / FALLBACK) ===== */
 .allergy-checkbox-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
@@ -4190,6 +4287,39 @@ body.dark-theme .profile-summary {
 body.dark-theme .profile-auto-filter-row {
   background: #0f172a !important;
   border-color: #334155 !important;
+}
+
+body.dark-theme .allergy-text-input {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f1f5f9 !important;
+}
+body.dark-theme .allergy-tags-container {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .allergy-tag-pill {
+  background: #431407 !important;
+  color: #fdba74 !important;
+  border-color: #9a3412 !important;
+}
+body.dark-theme .allergy-tag-pill .tag-remove-btn {
+  color: #fca5a5 !important;
+}
+body.dark-theme .allergy-quick-pill {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+body.dark-theme .allergy-quick-pill:hover {
+  background: #334155 !important;
+  border-color: #ea580c !important;
+  color: #fdba74 !important;
+}
+body.dark-theme .allergy-quick-pill.selected {
+  background: #ea580c !important;
+  border-color: #f97316 !important;
+  color: #ffffff !important;
 }
 
 body.dark-theme .allergy-check-pill {

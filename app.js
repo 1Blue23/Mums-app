@@ -200,7 +200,15 @@ const dom = {
 
   // Allergier & Indstillinger elementer
   authAllergiesGroup: document.getElementById('authAllergiesGroup'),
-  profileAllergyGrid: document.getElementById('profileAllergyGrid'),
+  authAllergyInput: document.getElementById('authAllergyInput'),
+  btnAddAuthAllergy: document.getElementById('btnAddAuthAllergy'),
+  authAllergyTagsContainer: document.getElementById('authAllergyTagsContainer'),
+  authAllergyQuickPills: document.getElementById('authAllergyQuickPills'),
+
+  profileAllergyInput: document.getElementById('profileAllergyInput'),
+  btnAddProfileAllergy: document.getElementById('btnAddProfileAllergy'),
+  profileAllergyTagsContainer: document.getElementById('profileAllergyTagsContainer'),
+  profileAllergyQuickPills: document.getElementById('profileAllergyQuickPills'),
   profileAutoFilterAllergies: document.getElementById('profileAutoFilterAllergies'),
   btnSaveProfileAllergies: document.getElementById('btnSaveProfileAllergies'),
   btnThemeLight: document.getElementById('btnThemeLight'),
@@ -1950,6 +1958,155 @@ async function resolveProductPrice(ingredient, storeKey) {
 
 // ─── SØGNING (Parallel multi-API fetch med Promise.all) ────────────────────────
 
+// ─── HJÆLPEFUNKTIONER: HTML ESCAPING & MODAL ────────────────────────────────
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function openAuthModal(defaultToRegister = false) {
+  if (!dom.authModal) return;
+  dom.authModal.classList.remove('hidden');
+  dom.authErrorMsg?.classList.add('hidden');
+  if (defaultToRegister && dom.tabRegister) {
+    dom.tabRegister.click();
+  }
+}
+
+// ─── UØNSKEDE INGREDIENSER & ALLERGI LOGIK ───────────────────────────────────
+let tempAuthAllergies = [];
+
+function renderProfileAllergyTags() {
+  if (!dom.profileAllergyTagsContainer) return;
+  const list = Array.isArray(state.allergies) ? state.allergies : [];
+  if (list.length === 0) {
+    dom.profileAllergyTagsContainer.innerHTML = '<span class="allergy-tags-empty" style="font-size:0.82rem; color:var(--gray-500); font-style:italic;">Ingen ingredienser tilføjet endnu. Skriv en ovenfor eller vælg herunder.</span>';
+  } else {
+    dom.profileAllergyTagsContainer.innerHTML = list.map(item => {
+      const label = window.DataLayer?.allergens?.getLabel(item) || item;
+      return `
+        <span class="allergy-tag-pill" data-item="${escapeHtml(item)}">
+          🚫 ${escapeHtml(label)}
+          <button type="button" class="tag-remove-btn" title="Fjern ${escapeHtml(label)}" data-item="${escapeHtml(item)}">&times;</button>
+        </span>
+      `;
+    }).join('');
+
+    dom.profileAllergyTagsContainer.querySelectorAll('.tag-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const itemToRemove = btn.dataset.item;
+        removeProfileAllergyItem(itemToRemove);
+      });
+    });
+  }
+
+  if (dom.profileAllergyQuickPills) {
+    dom.profileAllergyQuickPills.querySelectorAll('.allergy-quick-pill').forEach(pill => {
+      const a = pill.dataset.allergy;
+      const isSelected = list.includes(a);
+      pill.classList.toggle('selected', isSelected);
+    });
+  }
+}
+
+function addProfileAllergyItem(rawText) {
+  if (!rawText) return;
+  const item = String(rawText).trim().toLowerCase();
+  if (!item) return;
+  if (!Array.isArray(state.allergies)) state.allergies = [];
+  if (!state.allergies.includes(item)) {
+    state.allergies.push(item);
+    renderProfileAllergyTags();
+  }
+  if (dom.profileAllergyInput) {
+    dom.profileAllergyInput.value = '';
+    dom.profileAllergyInput.focus();
+  }
+}
+
+function removeProfileAllergyItem(rawText) {
+  if (!rawText) return;
+  const item = String(rawText).trim().toLowerCase();
+  if (!Array.isArray(state.allergies)) return;
+  state.allergies = state.allergies.filter(i => i !== item);
+  renderProfileAllergyTags();
+}
+
+function toggleProfileAllergyItem(key) {
+  if (!key) return;
+  const item = String(key).trim().toLowerCase();
+  if (!Array.isArray(state.allergies)) state.allergies = [];
+  if (state.allergies.includes(item)) {
+    removeProfileAllergyItem(item);
+  } else {
+    addProfileAllergyItem(item);
+  }
+}
+
+function renderAuthAllergyTags() {
+  if (!dom.authAllergyTagsContainer) return;
+  if (tempAuthAllergies.length === 0) {
+    dom.authAllergyTagsContainer.innerHTML = '<span class="allergy-tags-empty" style="font-size:0.75rem; color:var(--gray-500); font-style:italic;">Ingen valgt endnu</span>';
+  } else {
+    dom.authAllergyTagsContainer.innerHTML = tempAuthAllergies.map(item => {
+      const label = window.DataLayer?.allergens?.getLabel(item) || item;
+      return `
+        <span class="allergy-tag-pill" data-item="${escapeHtml(item)}" style="font-size:0.75rem; padding:2px 8px;">
+          🚫 ${escapeHtml(label)}
+          <button type="button" class="tag-remove-btn" title="Fjern" data-item="${escapeHtml(item)}">&times;</button>
+        </span>
+      `;
+    }).join('');
+
+    dom.authAllergyTagsContainer.querySelectorAll('.tag-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const itemToRemove = btn.dataset.item;
+        tempAuthAllergies = tempAuthAllergies.filter(i => i !== itemToRemove);
+        renderAuthAllergyTags();
+      });
+    });
+  }
+
+  if (dom.authAllergyQuickPills) {
+    dom.authAllergyQuickPills.querySelectorAll('.allergy-quick-pill').forEach(pill => {
+      const a = pill.dataset.allergy;
+      pill.classList.toggle('selected', tempAuthAllergies.includes(a));
+    });
+  }
+}
+
+function addAuthAllergyItem(rawText) {
+  if (!rawText) return;
+  const item = String(rawText).trim().toLowerCase();
+  if (!item) return;
+  if (!tempAuthAllergies.includes(item)) {
+    tempAuthAllergies.push(item);
+    renderAuthAllergyTags();
+  }
+  if (dom.authAllergyInput) {
+    dom.authAllergyInput.value = '';
+    dom.authAllergyInput.focus();
+  }
+}
+
+function toggleAuthAllergyItem(key) {
+  if (!key) return;
+  const item = String(key).trim().toLowerCase();
+  if (tempAuthAllergies.includes(item)) {
+    tempAuthAllergies = tempAuthAllergies.filter(i => i !== item);
+  } else {
+    tempAuthAllergies.push(item);
+  }
+  renderAuthAllergyTags();
+}
+
 // ─── UGE 2: AUTHENTICATION & SIKKER BRUGERDATA ───────────────────────────────
 function initAuthUI() {
   if (!dom.authBtn || !dom.authModal) return;
@@ -1987,6 +2144,24 @@ function initAuthUI() {
     dom.authAllergiesGroup?.classList.remove('hidden');
     if (dom.authSubmitBtn) dom.authSubmitBtn.textContent = 'Opret konto';
     dom.authErrorMsg?.classList.add('hidden');
+    tempAuthAllergies = [...(state.allergies || [])];
+    renderAuthAllergyTags();
+  });
+
+  // Auth uønskede ingredienser listeners
+  dom.btnAddAuthAllergy?.addEventListener('click', () => {
+    addAuthAllergyItem(dom.authAllergyInput?.value);
+  });
+  dom.authAllergyInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addAuthAllergyItem(dom.authAllergyInput?.value);
+    }
+  });
+  dom.authAllergyQuickPills?.querySelectorAll('.allergy-quick-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      toggleAuthAllergyItem(pill.dataset.allergy);
+    });
   });
 
   // Form submit
@@ -1999,10 +2174,10 @@ function initAuthUI() {
     try {
       dom.authErrorMsg?.classList.add('hidden');
       if (isRegisterMode) {
-        const checkedAllergies = Array.from(document.querySelectorAll('input[name="authAllergy"]:checked')).map(el => el.value);
-        const newUser = await auth.register(email, pass, name, checkedAllergies);
-        state.allergies = checkedAllergies;
+        const newUser = await auth.register(email, pass, name, tempAuthAllergies);
+        state.allergies = [...tempAuthAllergies];
         saveCurrentUserData();
+        syncAppStateToAllViews();
         showToast('Konto oprettet! Tjek din email for bekræftelseskode.', 'success');
         if (typeof sendVerificationEmail === 'function' && newUser) {
           sendVerificationEmail(newUser.email, newUser.name, newUser.verificationCode)
@@ -3908,10 +4083,8 @@ function renderProfileView() {
     cb.checked = state.selectedStores.includes(s);
   });
 
-  // Allergier og kosthensyn
-  document.querySelectorAll('.profile-allergy-check').forEach(cb => {
-    cb.checked = Array.isArray(state.allergies) && state.allergies.includes(cb.value);
-  });
+  // Uønskede ingredienser og allergier
+  renderProfileAllergyTags();
   if (dom.profileAutoFilterAllergies) {
     dom.profileAutoFilterAllergies.checked = Boolean(state.autoFilterAllergies);
   }
@@ -3972,16 +4145,32 @@ function initProfileViewUI() {
     showToast('✅ Indstillinger gemt og synkroniseret med appen!', 'success');
   });
 
-  // Gem allergier & kosthensyn
+  // Tilføj uønsket ingrediens via knap eller Enter
+  dom.btnAddProfileAllergy?.addEventListener('click', () => {
+    addProfileAllergyItem(dom.profileAllergyInput?.value);
+  });
+  dom.profileAllergyInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addProfileAllergyItem(dom.profileAllergyInput?.value);
+    }
+  });
+
+  // Hurtigvalg piller
+  dom.profileAllergyQuickPills?.querySelectorAll('.allergy-quick-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      toggleProfileAllergyItem(pill.dataset.allergy);
+    });
+  });
+
+  // Gem allergier & uønskede ingredienser
   dom.btnSaveProfileAllergies?.addEventListener('click', () => {
-    const selected = Array.from(document.querySelectorAll('.profile-allergy-check:checked')).map(cb => cb.value);
     const autoFilter = Boolean(dom.profileAutoFilterAllergies?.checked);
-    state.allergies = selected;
     state.autoFilterAllergies = autoFilter;
-    auth.saveAllergies(selected, autoFilter);
+    auth.saveAllergies(state.allergies, autoFilter);
     saveCurrentUserData();
     syncAppStateToAllViews();
-    showToast('✅ Dine allergier og kosthensyn er gemt!', 'success');
+    showToast('✅ Dine uønskede ingredienser og allergier er gemt!', 'success');
   });
 
   dom.profileAutoFilterAllergies?.addEventListener('change', () => {
