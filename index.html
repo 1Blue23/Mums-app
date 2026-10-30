@@ -13,12 +13,12 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=6" />
+  <link rel="stylesheet" href="style.css?v=7" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
     // Tving øjeblikkelig opdatering af service worker og bryd gammel cache
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
       navigator.serviceWorker.getRegistrations().then(function(regs) {
         regs.forEach(function(r) {
           if (r.waiting) r.waiting.postMessage({ type: 'SKIP_WAITING' });
@@ -55,6 +55,7 @@
       <!-- DESKTOP TOP NAV -->
       <nav class="desktop-nav" aria-label="Hovednavigation">
         <button class="nav-tab-btn active" data-tab="home">🏠 Hjem</button>
+        <button class="nav-tab-btn" data-tab="mealplan">📅 Madplan</button>
         <button class="nav-tab-btn" data-tab="recipes">🍲 Opskrifter</button>
         <button class="nav-tab-btn" data-tab="offers">🏷️ Tilbud</button>
         <button class="nav-tab-btn" data-tab="shopping">
@@ -188,8 +189,25 @@
               <button class="btn btn-secondary" id="btnFeaturedToCart" data-recipe-id="arla-pasta-bacon">
                 🛒 Føj til indkøbsliste
               </button>
+              <button class="btn btn-secondary" id="btnFeaturedToMealPlan" data-recipe-id="arla-pasta-bacon" title="Sæt på ugentlig madplan">
+                📅 Sæt på madplan
+              </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- MADPLAN OVERBLIK PÅ FORSIDE -->
+      <div class="card home-mealplan-preview-card" style="margin-top: 14px;">
+        <div class="featured-card-top">
+          <div class="section-title-wrap">
+            <span class="section-badge">📅 Ugens Madplan & Anti-Madspild</span>
+            <h2 class="section-title" id="homeMealPlanTodayTitle">Aftensmad i dag</h2>
+          </div>
+          <button class="btn-link" data-tab-target="mealplan">Åbn ugeplan ➔</button>
+        </div>
+        <div id="homeMealPlanTodayContent" class="home-mealplan-content" style="margin-top:12px;">
+          <!-- Dynamically populated -->
         </div>
       </div>
 
@@ -220,6 +238,108 @@
         </div>
         <div class="home-stores-grid" id="homeStoresGrid">
           <!-- Dynamically populated with 6 stores -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- NY FANE: MADPLAN & ANTI-MADSPILD SKEMA                                    -->
+    <!-- ========================================================================= -->
+    <section id="tabViewMealPlan" class="tab-view hidden">
+      <!-- HERO & OVERBLIK -->
+      <div class="card mealplan-hero-card">
+        <div class="mealplan-hero-top">
+          <div>
+            <div class="home-greeting-pill">📅 Ugens Madplan</div>
+            <h1 class="mealplan-title">Planlæg ugen & <span class="highlight">stop madspild</span></h1>
+            <p class="mealplan-sub">Sæt retter på ugens dage. MUMS samler automatisk hele ugens indkøb og foreslår retter, der genbruger dine råvarer.</p>
+          </div>
+          <div class="mealplan-actions-right">
+            <button id="btnAutoFillZeroWaste" class="btn btn-primary" title="Fyld automatisk tomme dage med retter der genbruger dine råvarer">
+              ✨ Anti-Madspild Auto-Udfyld
+            </button>
+            <button id="btnClearMealPlan" class="btn btn-secondary btn-sm" title="Nulstil hele ugens madplan">
+              🗑️ Ryd madplan
+            </button>
+          </div>
+        </div>
+
+        <!-- STATS BAR -->
+        <div class="mealplan-stats-bar">
+          <div class="mealplan-stat-item">
+            <span class="stat-icon">🍲</span>
+            <div>
+              <div class="stat-lbl">Planlagte dage</div>
+              <div class="stat-val" id="mpStatDays">0 / 7 dage</div>
+            </div>
+          </div>
+          <div class="mealplan-stat-item">
+            <span class="stat-icon">💰</span>
+            <div>
+              <div class="stat-lbl">Estimeret ugepris</div>
+              <div class="stat-val" id="mpStatPrice">0,00 kr</div>
+            </div>
+          </div>
+          <div class="mealplan-stat-item">
+            <span class="stat-icon">🌱</span>
+            <div>
+              <div class="stat-lbl">Anti-Madspilds Score</div>
+              <div class="stat-val" id="mpStatWasteScore">100% Råvareudnyttelse</div>
+            </div>
+          </div>
+          <div class="mealplan-stat-item">
+            <span class="stat-icon">👥</span>
+            <div>
+              <div class="stat-lbl">Portioner</div>
+              <div class="stat-val" id="mpStatServings">4 personer</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ANTI-MADSPILD INSIGHTS BOX -->
+        <div id="mpWasteInsightBox" class="mealplan-waste-insight-box">
+          <!-- Dynamically populated with shared ingredients & leftover tips -->
+        </div>
+      </div>
+
+      <!-- 7-DAGES SKEMA (MANDAG TIL SØNDAG) -->
+      <div class="mealplan-section-header">
+        <h3 class="section-title">🗓️ Ugentligt Madplan-Skema</h3>
+        <p class="section-subtitle">Vælg retter til ugens dage. Du kan også gå til fanen Opskrifter og trykke "+ Føj til madplan".</p>
+      </div>
+
+      <div class="mealplan-week-grid" id="mealPlanWeekGrid">
+        <!-- 7 cards dynamically rendered: Mandag, Tirsdag, Onsdag, Torsdag, Fredag, Lørdag, Søndag -->
+      </div>
+
+      <!-- SAMLET INDKØBSLISTE TIL HELE UGENS RETTER -->
+      <div class="card mealplan-shopping-card" id="mealPlanShoppingCard">
+        <div class="featured-card-top">
+          <div class="section-title-wrap">
+            <span class="section-badge">🛒 Alt hvad du skal købe</span>
+            <h2 class="section-title">Samlet Indkøb til Hele Ugen</h2>
+            <p style="font-size:0.85rem; color:var(--gray-600); margin-top:2px;">
+              Alle råvarer fra dine planlagte retter slået sammen i hele butikspakker.
+            </p>
+          </div>
+          <div class="mp-shopping-actions">
+            <button id="btnTransferMealPlanToCart" class="btn btn-primary">
+              🛒 Føj alle råvarer til min indkøbsliste
+            </button>
+            <button id="btnCopyWeeklyShoppingList" class="btn btn-secondary btn-sm">
+              📋 Kopiér liste
+            </button>
+          </div>
+        </div>
+
+        <!-- Supermarked Pris Sammenligning -->
+        <div id="mpStorePriceCompareBar" class="mp-store-compare-bar" style="margin-top:14px;">
+          <!-- Dynamically shows store prices for the whole week -->
+        </div>
+
+        <!-- Ingredienser tabel/liste -->
+        <div id="mpWeeklyIngredientsList" class="mp-ingredients-list" style="margin-top:16px;">
+          <!-- Dynamically populated -->
         </div>
       </div>
     </section>
@@ -975,6 +1095,10 @@
       <span class="nav-tab-icon">🏠</span>
       <span class="nav-tab-label">Hjem</span>
     </button>
+    <button class="nav-tab-btn" data-tab="mealplan">
+      <span class="nav-tab-icon">📅</span>
+      <span class="nav-tab-label">Madplan</span>
+    </button>
     <button class="nav-tab-btn" data-tab="recipes">
       <span class="nav-tab-icon">🍲</span>
       <span class="nav-tab-label">Opskrifter</span>
@@ -996,6 +1120,24 @@
 
   <!-- TOAST NOTIFICATION -->
   <div id="toast" class="toast hidden"></div>
+
+  <!-- VÆLG DAG TIL RET MODAL -->
+  <div id="mealPlanDayPickerModal" class="modal-backdrop hidden">
+    <div class="modal-card mealplan-day-modal-card" style="max-width:540px;">
+      <button id="closeMealPlanDayModal" class="modal-close-btn" title="Luk">&times;</button>
+      <div class="modal-store-header">
+        <div class="modal-store-logo">📅</div>
+        <div>
+          <h3 class="modal-store-title" id="mpPickerRecipeTitle">Føj til madplan</h3>
+          <p class="modal-store-sub">Vælg hvilken ugedag du vil tilberede retten</p>
+        </div>
+      </div>
+
+      <div class="mealplan-picker-days-grid" id="mealPlanPickerDaysGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; margin-top:16px;">
+        <!-- 7 day selection buttons -->
+      </div>
+    </div>
+  </div>
 
   <!-- MULTI-API STATUS MODAL -->
   <div id="apiModal" class="modal-backdrop hidden">
@@ -1265,10 +1407,10 @@
   </footer>
 
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
-  <script src="data.js?v=6"></script>
-  <script src="live_offers.js?v=6"></script>
-  <script src="app.js?v=6"></script>
+  <script src="data.js?v=7"></script>
+  <script src="live_offers.js?v=7"></script>
+  <script src="app.js?v=7"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
-  <script src="recipes_db.js?v=6" defer></script>
+  <script src="recipes_db.js?v=7" defer></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-// MUMS Progressive Web App – Service Worker v6
+// MUMS Progressive Web App – Service Worker v7
 // Bumping version triggers automatic update detection
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME = `mums-app-cache-${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
   './',

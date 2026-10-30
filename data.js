@@ -688,6 +688,15 @@ class AuthService {
           }
         ],
         shoppingList: [],
+        mealPlan: {
+          monday: null,
+          tuesday: null,
+          wednesday: null,
+          thursday: null,
+          friday: null,
+          saturday: null,
+          sunday: null,
+        },
       };
       localStorage.setItem(key, JSON.stringify(initial));
     }
@@ -701,6 +710,17 @@ class AuthService {
         const parsed = JSON.parse(raw);
         if (!parsed.allergies && this.currentUser?.allergies) {
           parsed.allergies = this.currentUser.allergies;
+        }
+        if (!parsed.mealPlan) {
+          parsed.mealPlan = {
+            monday: null,
+            tuesday: null,
+            wednesday: null,
+            thursday: null,
+            friday: null,
+            saturday: null,
+            sunday: null,
+          };
         }
         return parsed;
       }
@@ -727,6 +747,15 @@ class AuthService {
         }
       ],
       shoppingList: [],
+      mealPlan: {
+        monday: null,
+        tuesday: null,
+        wednesday: null,
+        thursday: null,
+        friday: null,
+        saturday: null,
+        sunday: null,
+      },
     };
   }
 
