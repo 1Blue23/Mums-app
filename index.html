@@ -13,9 +13,20 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=6" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script>
+    // Tving øjeblikkelig opdatering af service worker og bryd gammel cache
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) {
+          if (r.waiting) r.waiting.postMessage({ type: 'SKIP_WAITING' });
+          r.update();
+        });
+      });
+    }
+  </script>
 </head>
 <body>
 
@@ -1253,9 +1264,11 @@
     <p>MUMS App · Udviklet til det danske dagligvaremarked · Salling Group · REMA 1000 · Open Food Facts · Dansk Retursystem</p>
   </footer>
 
-  <script src="recipes_db.js"></script>
-  <script src="live_offers.js"></script>
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
+  <script src="data.js?v=6"></script>
+  <script src="live_offers.js?v=6"></script>
+  <script src="app.js?v=6"></script>
+  <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
+  <script src="recipes_db.js?v=6" defer></script>
 </body>
 </html>
