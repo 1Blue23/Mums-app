@@ -1,12 +1,13 @@
-// MUMS Progressive Web App – Service Worker v4
+// MUMS Progressive Web App – Service Worker v5
 // Bumping version triggers automatic update detection
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `mums-app-cache-${CACHE_VERSION}`;
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
   './recipes_db.js',
+  './live_offers.js',
   './data.js',
   './app.js',
   './manifest.json',
@@ -17,15 +18,15 @@ const ASSETS_TO_CACHE = [
   './icons/icon-maskable-512.png'
 ];
 
-// Install: cache alle app-filer. Vent IKKE med at skifte til ny worker (skipWaiting).
+// Install: cache alle app-filer og overtag hurtigt
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE).catch(err => {
         console.warn('[SW] Fejl ved caching:', err);
       });
     })
-    // skipWaiting() kaldes IKKE her – vi venter på at brugeren godkender opdatering
   );
 });
 

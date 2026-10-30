@@ -1693,8 +1693,8 @@ const DataLayer = {
       if (!recipe) return [];
       const found = new Set();
       const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ${i.name || ''} )).join(' ').toLowerCase();
-      const titleText = (recipe.name || '').toLowerCase() + ' ' + (recipe.desc || '').toLowerCase();
+      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ((i.name || '') + ' ' + (i.searchKey || '')))).join(' ').toLowerCase();
+      const titleText = ((recipe.name || '') + ' ' + (recipe.desc || '')).toLowerCase();
       const combined = ingTexts + ' ' + titleText;
 
       for (const [allergenKey, info] of Object.entries(this.ALLERGEN_MAP)) {
@@ -1712,9 +1712,9 @@ const DataLayer = {
       if (!recipe || !Array.isArray(userAllergies) || userAllergies.length === 0) return [];
 
       const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ${i.name || ''} )).join(' ').toLowerCase();
-      const titleDescText = ${recipe.name || ''} .toLowerCase();
-      const combinedRecipeText = ${ingTexts} ;
+      const ingTexts = ingList.map(i => (typeof i === 'string' ? i : ((i.name || '') + ' ' + (i.searchKey || '')))).join(' ').toLowerCase();
+      const titleDescText = ((recipe.name || '') + ' ' + (recipe.desc || '')).toLowerCase();
+      const combinedRecipeText = ingTexts + ' ' + titleDescText;
 
       const matched = new Set();
 
