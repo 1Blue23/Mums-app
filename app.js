@@ -2301,6 +2301,23 @@ function updateAuthModalView(user) {
 }
 
 function loadUserPersistentSettings() {
+  if (!state.userProfiles || state.userProfiles.length === 0) {
+    if (typeof NutritionProfile === 'function') {
+      state.userProfiles = [
+        new NutritionProfile({
+          id: 'default_normal',
+          name: 'Min normale kost',
+          calories: 2200,
+          protein: 120,
+          fat: 70,
+          carbs: 250,
+          fiber: 30,
+          isCustom: true,
+        })
+      ];
+    }
+  }
+
   const data = auth.getUserData();
   if (!data) return;
 

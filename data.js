@@ -863,6 +863,10 @@ const STORES = {
   }),
 };
 
+if (typeof window !== 'undefined') {
+  window.STORES = STORES;
+}
+
 // ─── DATA LAYER & CACHE ENGINE ────────────────────────────────────────────────
 const DataLayer = {
   config: {
