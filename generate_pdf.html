@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <title>MUMS App – Ikon og Titel</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm 18mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      color: #0f172a;
+      background: #ffffff;
+      line-height: 1.5;
+    }
+    .page-container {
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* Top rapport mærke */
+    .report-meta-tag {
+      display: inline-block;
+      font-size: 8.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #047857;
+      background: #ecfdf5;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid #a7f3d0;
+      margin-bottom: 24px;
+    }
+
+    /* Sektion 1: Stor forside præsentation */
+    .hero-card {
+      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+      border: 2px solid #86efac;
+      border-radius: 20px;
+      padding: 36px 30px;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .hero-icon-wrap {
+      width: 160px;
+      height: 160px;
+      margin: 0 auto 20px auto;
+      filter: drop-shadow(0 12px 24px rgba(4, 120, 87, 0.25));
+    }
+    .hero-icon-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .app-title-main {
+      font-size: 34pt;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      color: #064e3b;
+      margin-bottom: 4px;
+      line-height: 1.1;
+    }
+    .app-title-main span {
+      color: #059669;
+    }
+    .app-subtitle-main {
+      font-size: 13.5pt;
+      font-weight: 700;
+      color: #047857;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+    .app-desc-main {
+      font-size: 10pt;
+      color: #334155;
+      max-width: 540px;
+      margin: 0 auto;
+      line-height: 1.45;
+    }
+
+    /* Sektion 2: Horisontale logo-formater (Header / Dokumentbrug) */
+    .section-title {
+      font-size: 12pt;
+      font-weight: 800;
+      color: #1e293b;
+      border-bottom: 1.5px solid #e2e8f0;
+      padding-bottom: 6px;
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .layouts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 26px;
+    }
+    .layout-box {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 16px 18px;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .layout-icon-sm {
+      width: 68px;
+      height: 68px;
+      flex-shrink: 0;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+    }
+    .layout-icon-sm svg {
+      width: 100%;
+      height: 100%;
+    }
+    .layout-text {
+      flex: 1;
+    }
+    .layout-title {
+      font-size: 16pt;
+      font-weight: 900;
+      color: #064e3b;
+      line-height: 1.1;
+    }
+    .layout-sub {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #059669;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .layout-caption {
+      font-size: 8pt;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    /* Mørk variant */
+    .layout-box.dark {
+      background: #0f172a;
+      border-color: #334155;
+    }
+    .layout-box.dark .layout-title {
+      color: #ffffff;
+    }
+    .layout-box.dark .layout-sub {
+      color: #34d399;
+    }
+    .layout-box.dark .layout-caption {
+      color: #94a3b8;
+    }
+
+    /* Sektion 3: Branding & Farvepalette til rapporten */
+    .brand-specs-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 14px 18px;
+      background: #ffffff;
+    }
+    .specs-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    .spec-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.1);
+      flex-shrink: 0;
+    }
+    .spec-info {
+      font-size: 8pt;
+    }
+    .spec-name {
+      font-weight: 700;
+      color: #1e293b;
+      display: block;
+    }
+    .spec-code {
+      font-family: monospace;
+      color: #64748b;
+    }
+
+    /* Footer */
+    .report-footer {
+      margin-top: 24px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 8pt;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <div class="report-meta-tag">MUMS APP · PROJEKTDOKUMENTATION &amp; RAPPORTBILAG</div>
+
+    <!-- STOR FORSIDEPRÆSENTATION -->
+    <div class="hero-card">
+      <div class="hero-icon-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+          <defs>
+            <linearGradient id="mumsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#10b981" />
+              <stop offset="100%" stop-color="#047857" />
+            </linearGradient>
+          </defs>
+          <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#mumsGrad)" />
+          <circle cx="256" cy="230" r="165" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6" />
+          <g>
+            <path d="M176 220 C140 180 160 110 216 120 C236 80 290 80 306 120 C360 100 376 180 340 220 Z" fill="#ffffff" />
+            <rect x="176" y="226" width="160" height="28" rx="14" fill="#fef08a" />
+            <path d="M160 280 C210 340 302 340 352 280" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" />
+            <path d="M256 315 L252 305 L242 301 L252 297 L256 287 L260 297 L270 301 L260 305 Z" fill="#fef08a" />
+          </g>
+          <text x="256" y="415" font-family="'Segoe UI', system-ui, sans-serif" font-size="76" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">MUMS</text>
+          <text x="256" y="450" font-family="'Segoe UI', system-ui, sans-serif" font-size="22" font-weight="700" fill="#a7f3d0" text-anchor="middle" letter-spacing="2">MAD &amp; TILBUD</text>
+        </svg>
+      </div>
+
+      <h1 class="app-title-main">MUMS <span>App</span></h1>
+      <div class="app-subtitle-main">Opskrifter · Supermarkedspriser · Madplan · Anti-Madspild</div>
+      <p class="app-desc-main">
+        Det intelligente mad- og dagligvaresystem til det danske marked. Sammenligner priser på tværs af Netto, REMA 1000, Lidl, Bilka, Føtex og Coop 365discount, genererer automatiske 7-dages madplaner og reducerer madspild.
+      </p>
+    </div>
+
+    <!-- HORISONTALE FORMATER TIL RAPPORTEN -->
+    <div class="section-title">Logovarianter til Rapport (Forside &amp; Sideoverskrift)</div>
+    <div class="layouts-grid">
+      <!-- Lys variant -->
+      <div class="layout-box">
+        <div class="layout-icon-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+            <defs>
+              <linearGradient id="mumsGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#10b981" />
+                <stop offset="100%" stop-color="#047857" />
+              </linearGradient>
+            </defs>
+            <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#mumsGrad2)" />
+            <circle cx="256" cy="230" r="165" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6" />
+            <g>
+              <path d="M176 220 C140 180 160 110 216 120 C236 80 290 80 306 120 C360 100 376 180 340 220 Z" fill="#ffffff" />
+              <rect x="176" y="226" width="160" height="28" rx="14" fill="#fef08a" />
+              <path d="M160 280 C210 340 302 340 352 280" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" />
+            </g>
+            <text x="256" y="415" font-family="'Segoe UI', system-ui, sans-serif" font-size="76" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">MUMS</text>
+          </svg>
+        </div>
+        <div class="layout-text">
+          <div class="layout-title">MUMS App</div>
+          <div class="layout-sub">Mad &amp; Tilbud</div>
+          <div class="layout-caption">Lys baggrund / standard header</div>
+        </div>
+      </div>
+
+      <!-- Mørk variant -->
+      <div class="layout-box dark">
+        <div class="layout-icon-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+            <defs>
+              <linearGradient id="mumsGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#10b981" />
+                <stop offset="100%" stop-color="#047857" />
+              </linearGradient>
+            </defs>
+            <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#mumsGrad3)" />
+            <circle cx="256" cy="230" r="165" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="6" />
+            <g>
+              <path d="M176 220 C140 180 160 110 216 120 C236 80 290 80 306 120 C360 100 376 180 340 220 Z" fill="#ffffff" />
+              <rect x="176" y="226" width="160" height="28" rx="14" fill="#fef08a" />
+              <path d="M160 280 C210 340 302 340 352 280" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" />
+            </g>
+            <text x="256" y="415" font-family="'Segoe UI', system-ui, sans-serif" font-size="76" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">MUMS</text>
+          </svg>
+        </div>
+        <div class="layout-text">
+          <div class="layout-title">MUMS App</div>
+          <div class="layout-sub">Mad &amp; Tilbud</div>
+          <div class="layout-caption">Mørk baggrund / Dark Mode</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BRANDING SPECIFIKATIONER -->
+    <div class="section-title">Designspecifikationer til Rapport</div>
+    <div class="brand-specs-card">
+      <div class="specs-grid">
+        <div class="spec-item">
+          <div class="color-swatch" style="background:#10b981;"></div>
+          <div class="spec-info">
+            <span class="spec-name">Primær Grøn</span>
+            <span class="spec-code">#10B981</span>
+          </div>
+        </div>
+        <div class="spec-item">
+          <div class="color-swatch" style="background:#047857;"></div>
+          <div class="spec-info">
+            <span class="spec-name">Dyb Grøn</span>
+            <span class="spec-code">#047857</span>
+          </div>
+        </div>
+        <div class="spec-item">
+          <div class="color-swatch" style="background:#fef08a;"></div>
+          <div class="spec-info">
+            <span class="spec-name">Accent Gul</span>
+            <span class="spec-code">#FEF08A</span>
+          </div>
+        </div>
+        <div class="spec-item">
+          <div class="color-swatch" style="background:#0f172a;"></div>
+          <div class="spec-info">
+            <span class="spec-name">Kontrast Mørk</span>
+            <span class="spec-code">#0F172A</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="report-footer">
+      <span>MUMS App · Udviklet til det danske dagligvaremarked</span>
+      <span>Udgave: 2026 · Format: Vektor &amp; Høj Opløsning</span>
+    </div>
+  </div>
+</body>
+</html>

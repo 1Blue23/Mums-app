@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -1091,6 +1091,22 @@
             🔄 Tjek for opdateringer
           </button>
           <p id="profileUpdateStatusText" style="font-size:0.8rem; color:var(--gray-600); text-align:center; margin-top:6px;" class="hidden"></p>
+
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border-color, #e2e8f0); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <img src="icons/icon.svg" alt="MUMS Ikon" style="width:28px; height:28px; border-radius:6px;">
+              <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary, #0f172a);">MUMS App Ikon</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <a href="icons/icon.svg" download="MUMS_App_Vector_Icon.svg" class="btn btn-secondary btn-sm" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Download originalt vektor ikon i SVG format">
+                ⬇️ Hent Vektor (SVG)
+              </a>
+              <a href="icons/icon-512.png" download="MUMS_App_Icon_512.png" class="btn btn-secondary btn-sm" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Download højopløselig PNG">
+                ⬇️ Hent PNG (HD)
+              </a>
+            </div>
+          </div>
+
           <div class="pwa-ios-instructions hidden" id="pwaIosInstructions" style="background:#f0fdf4; border:1px solid #86efac; border-radius:var(--radius-sm); padding:12px 14px; margin-top:10px;">
             <strong style="color:#166534;">📱 Sådan installeres på iPhone / iPad:</strong>
             <ol style="margin:6px 0 0 18px; font-size:0.85rem; color:#14532d; line-height:1.6;">
@@ -1421,14 +1437,14 @@
   </div>
 
   <footer class="footer">
-    <p>MUMS App · Udviklet til det danske dagligvaremarked · Salling Group · REMA 1000 · Open Food Facts · Dansk Retursystem</p>
+    <p>MUMS App · Udviklet til det danske dagligvaremarked · Salling Group · REMA 1000 · Open Food Facts · Dansk Retursystem · <a href="icons/icon.svg" download="MUMS_App_Vector_Icon.svg" style="color:inherit; text-decoration:underline;">Hent Vektor Ikon (SVG)</a></p>
   </footer>
 
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
-  <script src="data.js?v=9"></script>
-  <script src="live_offers.js?v=9"></script>
-  <script src="app.js?v=9"></script>
+  <script src="data.js?v=10"></script>
+  <script src="live_offers.js?v=10"></script>
+  <script src="app.js?v=10"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
-  <script src="recipes_db.js?v=9" defer></script>
+  <script src="recipes_db.js?v=10" defer></script>
 </body>
 </html>
