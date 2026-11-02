@@ -5083,3 +5083,724 @@ body.dark-theme .mealplan-day-picker-btn.has-dish {
   background: #431407 !important;
   border-color: #ea580c !important;
 }
+
+/* ===== NY ULTRA-REN & MODERNE MADPLAN UI/UX ===== */
+.mp-clean-header-card {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mp-clean-header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.mp-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mp-main-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--gray-900);
+  margin: 0;
+}
+.mp-quick-stats-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mp-pill {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  border: 1px solid var(--gray-200);
+}
+.mp-pill-price {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+.mp-pill-waste {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
+}
+.mp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mp-btn-action {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Kompakt Anti-Madspild Bånd */
+.mp-waste-compact-banner {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: #14532d;
+}
+.mp-waste-empty-strip {
+  color: #166534;
+  font-size: 0.82rem;
+}
+.mp-waste-flex-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mp-waste-shared-inline,
+.mp-waste-recs-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mp-waste-lbl {
+  font-weight: 700;
+  color: #15803d;
+  font-size: 0.8rem;
+}
+.mp-waste-chips,
+.mp-waste-rec-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mp-waste-rec-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #86efac;
+  border-radius: 999px;
+  padding: 3px 8px 3px 10px;
+  font-size: 0.76rem;
+}
+.mp-rec-name {
+  font-weight: 700;
+  color: #0f172a;
+}
+.mp-rec-leftovers {
+  color: #15803d;
+  font-size: 0.7rem;
+}
+.mp-rec-btn {
+  background: #10b981;
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mp-rec-btn:hover {
+  background: #059669;
+}
+
+/* 7-Dages Skema */
+.mp-schedule-section {
+  margin-top: 18px;
+}
+.mp-schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.mp-section-heading {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--gray-900);
+  margin: 0;
+}
+.mp-section-hint {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+.mp-day-dish-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mp-day-dish-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--gray-100);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+.mp-day-dish-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mp-day-dish-details {
+  flex: 1;
+  min-width: 0;
+}
+.mp-day-dish-title {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-day-dish-meta-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--gray-500);
+  margin-top: 3px;
+}
+.mp-day-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mp-day-btn {
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  line-height: 1.2;
+}
+.mp-day-btn-danger {
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  line-height: 1.2;
+  color: #dc2626;
+}
+.mp-day-empty-box {
+  border: 1.5px dashed var(--gray-300);
+  border-radius: 8px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--gray-50);
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.mp-day-empty-box:hover {
+  border-color: var(--primary);
+  background: #f0fdf4;
+}
+.mp-empty-plus {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1;
+}
+.mp-empty-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gray-600);
+}
+.mp-today-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #d97706;
+  background: #fef3c7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+.mp-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gray-300);
+}
+.mp-status-dot.active {
+  background: #10b981;
+}
+
+/* Indkøbstjekliste */
+.mp-shopping-card {
+  margin-top: 22px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.mp-shopping-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mp-badge-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #047857;
+  background: #ecfdf5;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+  margin-bottom: 4px;
+}
+.mp-subtext {
+  font-size: 0.84rem;
+  color: var(--gray-500);
+  margin: 2px 0 0 0;
+}
+.mp-shopping-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Butiksvisning fane tabs */
+.mp-store-filter-wrap {
+  margin-top: 14px;
+}
+.mp-view-tabs {
+  display: inline-flex;
+  background: var(--gray-100);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  gap: 4px;
+}
+.mp-tab-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--gray-600);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.mp-tab-btn.active {
+  background: var(--white);
+  color: var(--gray-900);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.mp-tab-pill-badge {
+  font-size: 0.7rem;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+}
+
+/* Progress bar for afkrydsning */
+.mp-checklist-progress-bar-wrap {
+  margin-top: 14px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+.mp-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gray-700);
+  margin-bottom: 6px;
+}
+.mp-progress-track {
+  height: 8px;
+  background: var(--gray-200);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mp-progress-fill {
+  height: 100%;
+  background: #10b981;
+  transition: width 0.25s ease;
+}
+.btn-text-link {
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 0.74rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* Tjekliste Butiksgrupper & Rækker */
+.mp-checklist-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mp-checklist-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--gray-600);
+}
+.mp-store-group-card {
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--white);
+}
+.mp-store-group-header {
+  background: var(--gray-50);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--gray-200);
+}
+.mp-store-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mp-store-items-count {
+  font-size: 0.76rem;
+  color: var(--gray-500);
+  font-weight: 600;
+}
+.mp-store-group-total {
+  font-size: 0.95rem;
+  color: var(--primary);
+  font-weight: 800;
+}
+.mp-checklist-items-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.mp-check-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--gray-100);
+  transition: background 0.15s;
+}
+.mp-check-item-row:last-child {
+  border-bottom: none;
+}
+.mp-check-item-row:hover {
+  background: var(--gray-50);
+}
+.mp-check-item-row.checked {
+  background: #f8fafc;
+  opacity: 0.6;
+}
+.mp-check-item-row.checked .mp-item-name {
+  text-decoration: line-through;
+  color: var(--gray-400);
+}
+.mp-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.mp-real-checkbox {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+.mp-custom-check {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--gray-400);
+  border-radius: 5px;
+  background: var(--white);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.mp-real-checkbox:checked ~ .mp-custom-check {
+  background: #10b981;
+  border-color: #10b981;
+}
+.mp-real-checkbox:checked ~ .mp-custom-check::after {
+  content: '✓';
+  color: white;
+  font-size: 13px;
+  font-weight: 800;
+}
+.mp-item-text {
+  flex: 1;
+  min-width: 0;
+}
+.mp-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mp-item-name {
+  font-size: 0.86rem;
+  color: var(--gray-900);
+  font-weight: 700;
+}
+.mp-item-sub-info {
+  font-size: 0.74rem;
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+.mp-pkg-info {
+  font-weight: 600;
+  color: var(--gray-700);
+}
+.mp-days-info {
+  color: var(--gray-500);
+}
+.mp-item-price {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--gray-800);
+  margin-left: 10px;
+  white-space: nowrap;
+}
+.mp-store-price-chip.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+.mp-cheapest-flag {
+  font-size: 0.68rem;
+  color: #047857;
+  font-weight: 800;
+}
+
+/* ===== PRINT STYLES FOR SHOPPING LIST ===== */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10pt !important;
+  }
+  .header,
+  .nav-tabs,
+  .bottom-nav,
+  .footer,
+  .modal-overlay,
+  .mp-clean-header-card,
+  .mp-schedule-section,
+  .mp-store-filter-wrap,
+  .mp-shopping-top-actions,
+  .mp-checklist-progress-bar-wrap,
+  .mp-store-price-compareBar,
+  .mp-badge-tag,
+  .no-print,
+  .btn {
+    display: none !important;
+  }
+  
+  #tabViewMealPlan {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  #mealPlanShoppingCard {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .mp-shopping-top-bar {
+    display: none !important;
+  }
+  .mp-print-header {
+    display: block !important;
+  }
+  .mp-store-group-card {
+    border: 1px solid #94a3b8 !important;
+    margin-bottom: 12px !important;
+    page-break-inside: avoid;
+  }
+  .mp-store-group-header {
+    background: #f1f5f9 !important;
+    border-bottom: 1px solid #94a3b8 !important;
+    padding: 6px 10px !important;
+  }
+  .mp-check-item-row {
+    padding: 5px 10px !important;
+    border-bottom: 1px dashed #cbd5e1 !important;
+  }
+  .mp-custom-check {
+    border: 1.5px solid #000 !important;
+    background: transparent !important;
+  }
+  .mp-custom-check::after {
+    display: none !important;
+  }
+  .mp-item-name {
+    color: #000 !important;
+    text-decoration: none !important;
+  }
+}
+
+/* ===== DARK MODE OVERRIDES FOR NEW MEAL PLAN ===== */
+body.dark-theme .mp-clean-header-card,
+body.dark-theme .mp-shopping-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-main-title,
+body.dark-theme .mp-section-heading {
+  color: #f8fafc !important;
+}
+body.dark-theme .mp-section-hint,
+body.dark-theme .mp-subtext {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mp-pill {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+body.dark-theme .mp-pill-price {
+  background: #064e3b !important;
+  color: #6ee7b7 !important;
+  border-color: #059669 !important;
+}
+body.dark-theme .mp-pill-waste {
+  background: #022c22 !important;
+  color: #a7f3d0 !important;
+  border-color: #047857 !important;
+}
+body.dark-theme .mp-waste-compact-banner {
+  background: #064e3b !important;
+  border-color: #059669 !important;
+  color: #ecfdf5 !important;
+}
+body.dark-theme .mp-waste-lbl {
+  color: #6ee7b7 !important;
+}
+body.dark-theme .mp-waste-rec-pill {
+  background: #0f172a !important;
+  border-color: #059669 !important;
+}
+body.dark-theme .mp-rec-name {
+  color: #f8fafc !important;
+}
+body.dark-theme .mp-rec-leftovers {
+  color: #34d399 !important;
+}
+body.dark-theme .mp-day-dish-thumb {
+  background: #0f172a !important;
+}
+body.dark-theme .mp-day-dish-title {
+  color: #f8fafc !important;
+}
+body.dark-theme .mp-day-dish-meta-strip {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mp-day-empty-box {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-day-empty-box:hover {
+  background: #1e293b !important;
+  border-color: #10b981 !important;
+}
+body.dark-theme .mp-empty-label {
+  color: #cbd5e1 !important;
+}
+body.dark-theme .mp-view-tabs {
+  background: #0f172a !important;
+}
+body.dark-theme .mp-tab-btn {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mp-tab-btn.active {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+}
+body.dark-theme .mp-checklist-progress-bar-wrap {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-progress-info {
+  color: #cbd5e1 !important;
+}
+body.dark-theme .mp-progress-track {
+  background: #334155 !important;
+}
+body.dark-theme .mp-store-group-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-store-group-header {
+  background: #0f172a !important;
+  border-bottom-color: #334155 !important;
+}
+body.dark-theme .mp-store-items-count {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mp-check-item-row {
+  border-bottom-color: #334155 !important;
+}
+body.dark-theme .mp-check-item-row:hover {
+  background: #0f172a !important;
+}
+body.dark-theme .mp-check-item-row.checked {
+  background: #0f172a !important;
+}
+body.dark-theme .mp-item-name {
+  color: #f8fafc !important;
+}
+body.dark-theme .mp-pkg-info {
+  color: #cbd5e1 !important;
+}
+body.dark-theme .mp-item-price {
+  color: #f1f5f9 !important;
+}
+body.dark-theme .mp-custom-check {
+  border-color: #475569 !important;
+  background: #0f172a !important;
+}
