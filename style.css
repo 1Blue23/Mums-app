@@ -5804,3 +5804,205 @@ body.dark-theme .mp-custom-check {
   border-color: #475569 !important;
   background: #0f172a !important;
 }
+
+/* ===== MULTI-UGE NAVIGATION & PERSON-SKALERING (UGE 45, UGE 46...) ===== */
+.mp-week-navigation-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.mp-week-selector-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mp-week-nav-btn {
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-100);
+  color: var(--text-primary);
+  border: 1px solid var(--gray-200);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mp-week-nav-btn:hover {
+  background: var(--emerald-50, #ecfdf5);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.mp-week-dropdown-wrap {
+  position: relative;
+  min-width: 200px;
+}
+
+.mp-week-select-dropdown {
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--primary, #10b981);
+  background: var(--white);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.mp-week-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-week-actions-group .btn {
+  font-size: 0.8rem;
+  padding: 7px 12px;
+  font-weight: 600;
+}
+
+/* Person-skalering bjælke */
+.mp-servings-bar-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  margin-bottom: 12px;
+}
+
+.mp-servings-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mp-servings-hint {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--gray-500);
+}
+
+.mp-servings-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mp-serving-pill {
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1.5px solid var(--gray-300, #cbd5e1);
+  background: var(--white);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mp-serving-pill:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.mp-serving-pill.active {
+  background: var(--primary, #10b981);
+  border-color: var(--primary, #10b981);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+/* Sikring mod ulæselig tekst i Anti-madspild sektionen */
+.waste-rec-card {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+.waste-rec-dish-name {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+.waste-rec-leftovers {
+  color: #15803d !important;
+  font-weight: 600 !important;
+}
+
+/* Dark mode for ugevælger & person-skalering */
+body.dark-theme .mp-week-navigation-bar {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-week-nav-btn {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-week-nav-btn:hover {
+  background: #064e3b !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+}
+body.dark-theme .mp-week-select-dropdown {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #10b981 !important;
+}
+body.dark-theme .mp-servings-bar-strip {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+body.dark-theme .mp-servings-label {
+  color: #f1f5f9 !important;
+}
+body.dark-theme .mp-servings-hint {
+  color: #94a3b8 !important;
+}
+body.dark-theme .mp-serving-pill {
+  background: #0f172a !important;
+  border-color: #475569 !important;
+  color: #cbd5e1 !important;
+}
+body.dark-theme .mp-serving-pill:hover {
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+}
+body.dark-theme .mp-serving-pill.active {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+}
+body.dark-theme .waste-rec-card {
+  background: #0f172a !important;
+  border-color: #059669 !important;
+}
+body.dark-theme .waste-rec-dish-name {
+  color: #f8fafc !important;
+}
+body.dark-theme .waste-rec-leftovers {
+  color: #34d399 !important;
+}
+body.dark-theme .waste-rec-leftovers span {
+  color: #a7f3d0 !important;
+}

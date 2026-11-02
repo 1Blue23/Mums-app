@@ -697,6 +697,9 @@ class AuthService {
           saturday: null,
           sunday: null,
         },
+        mealPlans: {},
+        selectedWeekKey: null,
+        mealPlanCheckedItems: {},
       };
       localStorage.setItem(key, JSON.stringify(initial));
     }
@@ -721,6 +724,12 @@ class AuthService {
             saturday: null,
             sunday: null,
           };
+        }
+        if (!parsed.mealPlans || typeof parsed.mealPlans !== 'object') {
+          parsed.mealPlans = {};
+        }
+        if (!parsed.mealPlanCheckedItems || typeof parsed.mealPlanCheckedItems !== 'object') {
+          parsed.mealPlanCheckedItems = {};
         }
         return parsed;
       }
@@ -756,6 +765,9 @@ class AuthService {
         saturday: null,
         sunday: null,
       },
+      mealPlans: {},
+      selectedWeekKey: null,
+      mealPlanCheckedItems: {},
     };
   }
 

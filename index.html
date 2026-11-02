@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -276,6 +276,47 @@
           </div>
         </div>
 
+        <!-- UGEVÆLGER & MULTI-UGE NAVIGATION (Vælg uge 45, 46, osv. og byg videre) -->
+        <div class="mp-week-navigation-bar">
+          <div class="mp-week-selector-group">
+            <button type="button" class="btn btn-secondary btn-sm mp-week-nav-btn" id="btnPrevWeek" title="Gå til forrige uge">
+              ◀ Forrige uge
+            </button>
+            <div class="mp-week-dropdown-wrap">
+              <select id="mpWeekSelectDropdown" class="mp-week-select-dropdown" aria-label="Vælg uge for madplanen">
+                <!-- Dynamisk genereret: Uge 44, Uge 45 (Nuværende), Uge 46, osv. -->
+              </select>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm mp-week-nav-btn" id="btnNextWeek" title="Gå til næste uge">
+              Næste uge ▶
+            </button>
+          </div>
+
+          <div class="mp-week-actions-group">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnJumpToCurrentWeek" title="Hop direkte til den nuværende uge">
+              📍 Denne uge
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCopyWeekToNext" title="Kopiér denne madplan til næste uge så du kan bygge videre">
+              📋 Kopiér til næste uge
+            </button>
+          </div>
+        </div>
+
+        <!-- PERSON-SKALERING (HURTIG VÆLGER FOR MADPLAN) -->
+        <div class="mp-servings-bar-strip">
+          <div class="mp-servings-label">
+            <span>👥 Portionsstørrelse:</span>
+            <span class="mp-servings-hint">(Skalerer automatisk råvarer, pakker, priser &amp; kalorier)</span>
+          </div>
+          <div class="mp-servings-pills-group" id="mpServingsPillsGroup">
+            <button type="button" class="mp-serving-pill" data-servings="1">1 pers</button>
+            <button type="button" class="mp-serving-pill" data-servings="2">2 pers</button>
+            <button type="button" class="mp-serving-pill active" data-servings="4">4 pers</button>
+            <button type="button" class="mp-serving-pill" data-servings="6">6 pers</button>
+            <button type="button" class="mp-serving-pill" data-servings="8">8 pers</button>
+          </div>
+        </div>
+
         <!-- KOMPAKT ANTI-MADSPILD BÅND -->
         <div id="mpWasteInsightBox" class="mp-waste-compact-banner">
           <!-- Dynamically populated -->
@@ -285,8 +326,8 @@
       <!-- 7-DAGES VISUELT MADPLAN SKEMA -->
       <div class="mp-schedule-section">
         <div class="mp-schedule-header">
-          <h2 class="mp-section-heading">🗓️ Ugens 7 Dage</h2>
-          <span class="mp-section-hint">Vælg retter eller klik for at bytte</span>
+          <h2 class="mp-section-heading" id="mpScheduleHeading">🗓️ Ugens 7 Dage</h2>
+          <span class="mp-section-hint" id="mpScheduleWeekHint">Vælg retter eller klik for at bytte</span>
         </div>
         <div class="mealplan-week-grid" id="mealPlanWeekGrid">
           <!-- 7 cards: Mandag til Søndag -->
@@ -1163,11 +1204,18 @@
         <div class="modal-store-logo">📅</div>
         <div>
           <h3 class="modal-store-title" id="mpPickerRecipeTitle">Føj til madplan</h3>
-          <p class="modal-store-sub">Vælg hvilken ugedag du vil tilberede retten</p>
+          <p class="modal-store-sub">Vælg hvilken uge og ugedag du vil tilberede retten</p>
         </div>
       </div>
 
-      <div class="mealplan-picker-days-grid" id="mealPlanPickerDaysGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; margin-top:16px;">
+      <!-- Ugevælger inde i modal -->
+      <div class="mp-modal-week-row" style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+        <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary, #0f172a); white-space:nowrap;">Vælg uge:</span>
+        <select id="mpModalWeekSelect" class="mp-week-select-dropdown" style="flex:1;" aria-label="Vælg uge i modal">
+        </select>
+      </div>
+
+      <div class="mealplan-picker-days-grid" id="mealPlanPickerDaysGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; margin-top:14px;">
         <!-- 7 day selection buttons -->
       </div>
     </div>
@@ -1441,10 +1489,10 @@
   </footer>
 
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
-  <script src="data.js?v=10"></script>
-  <script src="live_offers.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="data.js?v=11"></script>
+  <script src="live_offers.js?v=11"></script>
+  <script src="app.js?v=11"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
-  <script src="recipes_db.js?v=10" defer></script>
+  <script src="recipes_db.js?v=11" defer></script>
 </body>
 </html>

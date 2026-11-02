@@ -2311,11 +2311,23 @@ function loadUserPersistentSettings() {
   state.allergies = Array.isArray(data.allergies) ? data.allergies : (auth.currentUser?.allergies || []);
   state.autoFilterAllergies = Boolean(data.autoFilterAllergies);
 
-  if (data.mealPlan && typeof data.mealPlan === 'object') {
-    state.mealPlan = Object.assign({
-      monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null
-    }, data.mealPlan);
+  state.mealPlans = (data.mealPlans && typeof data.mealPlans === 'object') ? data.mealPlans : {};
+  state.currentWeekKey = typeof getISOWeekKey === 'function' ? getISOWeekKey(new Date()) : '2026-W45';
+  state.selectedWeekKey = data.selectedWeekKey || state.currentWeekKey;
+  state.mealPlanCheckedItems = (data.mealPlanCheckedItems && typeof data.mealPlanCheckedItems === 'object') ? data.mealPlanCheckedItems : {};
+
+  if (!state.mealPlans[state.selectedWeekKey]) {
+    if (data.mealPlan && Object.values(data.mealPlan).some(v => v !== null)) {
+      state.mealPlans[state.selectedWeekKey] = Object.assign({
+        monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null
+      }, data.mealPlan);
+    } else {
+      state.mealPlans[state.selectedWeekKey] = {
+        monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null
+      };
+    }
   }
+  state.mealPlan = state.mealPlans[state.selectedWeekKey];
 
   // Opdater instansierede ernæringsprofiler
   if (Array.isArray(data.nutritionProfiles) && data.nutritionProfiles.length > 0) {
@@ -2356,14 +2368,15 @@ function initServingsAndBudgetUI() {
   dom.servingsBtns?.forEach(btn => {
     btn.addEventListener('click', () => {
       const sVal = parseInt(btn.dataset.servings, 10);
-      if (sVal && sVal !== state.servings) {
-        state.servings = sVal;
-        auth.saveUserData({ servings: sVal });
-        updateServingsUI();
-        showToast(`👥 Skaleret til ${sVal} personer`, 'success');
-
-        if (state.lastSearchResults) {
-          renderRecipeCards(state.lastSearchResults);
+      if (sVal) {
+        if (typeof setAppServings === 'function') {
+          setAppServings(sVal);
+        } else {
+          state.servings = sVal;
+          auth.saveUserData({ servings: sVal });
+          updateServingsUI();
+          showToast(`👥 Skaleret til ${sVal} personer`, 'success');
+          if (state.lastSearchResults) renderRecipeCards(state.lastSearchResults);
         }
       }
     });
@@ -3266,11 +3279,21 @@ function renderRecipeCards(searchResults = {}) {
     let nutrHTML = '';
     if (recipe.nutrition && (recipe.nutrition.kcal || recipe.nutrition.protein)) {
       const isLiveOff = recipe.nutritionSource === 'openfoodfacts.org';
+      const s = state.servings || 4;
+      const baseKcal = recipe.nutrition.kcal;
+      const totalKcal = (baseKcal !== undefined && baseKcal !== null) ? Math.round(baseKcal * s) : null;
+      const baseProt = recipe.nutrition.protein;
+      const totalProt = (baseProt !== undefined && baseProt !== null) ? Math.round(baseProt * s) : null;
+      const baseFat = recipe.nutrition.fat;
+      const totalFat = (baseFat !== undefined && baseFat !== null) ? Math.round(baseFat * s) : null;
+      const baseCarbs = recipe.nutrition.carbs;
+      const totalCarbs = (baseCarbs !== undefined && baseCarbs !== null) ? Math.round(baseCarbs * s) : null;
+
       nutrHTML = `
-        <span class="nutr-pill nutr-kcal">⚡ ${recipe.nutrition.kcal ?? '—'} kcal</span>
-        <span class="nutr-pill nutr-prot">🥩 ${recipe.nutrition.protein ?? '—'}g protein</span>
-        <span class="nutr-pill nutr-fat">🥑 ${recipe.nutrition.fat ?? '—'}g fedt</span>
-        <span class="nutr-pill nutr-carbs">🌾 ${recipe.nutrition.carbs ?? '—'}g kulhydrat</span>
+        <span class="nutr-pill nutr-kcal" title="${s} personer: ${totalKcal ?? '-'} kcal i alt">⚡ ${baseKcal ?? '—'} kcal/pers ${s > 1 && totalKcal ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalKcal} i alt)</small>` : ''}</span>
+        <span class="nutr-pill nutr-prot" title="${s} personer: ${totalProt ?? '-'}g protein i alt">🥩 ${baseProt ?? '—'}g prot${s > 1 && totalProt ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalProt}g)</small>` : ''}</span>
+        <span class="nutr-pill nutr-fat" title="${s} personer: ${totalFat ?? '-'}g fedt i alt">🥑 ${baseFat ?? '—'}g fedt</span>
+        <span class="nutr-pill nutr-carbs" title="${s} personer: ${totalCarbs ?? '-'}g kulhydrat i alt">🌾 ${baseCarbs ?? '—'}g kulh.</span>
         ${recipe.nutrition.fiber !== undefined ? `<span class="nutr-pill">🥗 ${recipe.nutrition.fiber}g fibre</span>` : ''}
         ${isLiveOff ? `<span class="nutr-live-tag">🟢 Open Food Facts</span>` : ''}
       `;
@@ -3398,8 +3421,7 @@ function renderRecipeCards(searchResults = {}) {
           return `- ${item.productName}: ${item.packagesNeeded} pk. à ${item.packageSizeText} (${item.hasPrice ? item.totalPrice.toFixed(2) + ' kr' : 'pris mangler'}) hos ${loc.label}, ${loc.address}`;
         }),
       ];
-      navigator.clipboard.writeText(lines.join('\n')).then(() => {
-        showToast('📋 Indkøbsliste kopieret til udklipsholder!', 'success');
+      navigator.clipboard.writeText(lines.join('\n')).then(() => {        showToast('📋 Indkøbsliste kopieret til udklipsholder!', 'success');
       }).catch(() => {
         showToast('Kunne ikke kopiere til udklipsholder', 'error');
       });
@@ -3703,6 +3725,9 @@ function saveCurrentUserData() {
       allergies: state.allergies,
       autoFilterAllergies: state.autoFilterAllergies,
       mealPlan: state.mealPlan,
+      mealPlans: state.mealPlans,
+      selectedWeekKey: state.selectedWeekKey,
+      mealPlanCheckedItems: state.mealPlanCheckedItems,
     });
   }
 }
@@ -4320,46 +4345,224 @@ function getTodayDayKey() {
   return map[dayIndex] || 'monday';
 }
 
-function openAddToMealPlanModal(recipeId) {
-  const recipe = (window.RECIPES || []).find(r => r.id === recipeId);
-  if (!recipe) {
-    showToast('Opskrift ikke fundet', 'error');
+// ─── MULTI-UGE MADPLAN & KALENDER SYSTEM ──────────────────────────────────────
+function getISOWeekKey(d = new Date()) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function getWeekInfo(weekKey) {
+  let [yearStr, wStr] = (weekKey || '').split('-W');
+  let year = parseInt(yearStr, 10) || new Date().getFullYear();
+  let week = parseInt(wStr, 10) || 1;
+
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dayOfWeek = jan4.getUTCDay() || 7;
+  const mondayWeek1 = new Date(jan4.getTime() - (dayOfWeek - 1) * 86400000);
+  const targetMonday = new Date(mondayWeek1.getTime() + (week - 1) * 7 * 86400000);
+  const targetSunday = new Date(targetMonday.getTime() + 6 * 86400000);
+
+  const months = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+  const startStr = `${targetMonday.getUTCDate()}. ${months[targetMonday.getUTCMonth()]}`;
+  const endStr = `${targetSunday.getUTCDate()}. ${months[targetSunday.getUTCMonth()]}`;
+
+  const currentKey = getISOWeekKey(new Date());
+  const isCurrent = weekKey === currentKey;
+
+  return {
+    weekKey,
+    year,
+    week,
+    startDate: targetMonday,
+    endDate: targetSunday,
+    dateRangeText: `${startStr} – ${endStr}`,
+    label: `Uge ${week} (${startStr} – ${endStr})`,
+    shortLabel: `Uge ${week}`,
+    isCurrent
+  };
+}
+
+function getAdjacentWeekKey(weekKey, offsetWeeks = 1) {
+  const info = getWeekInfo(weekKey);
+  const newMonday = new Date(info.startDate.getTime() + offsetWeeks * 7 * 86400000);
+  return getISOWeekKey(newMonday);
+}
+
+function getAvailableWeekOptions() {
+  const curKey = getISOWeekKey(new Date());
+  const curInfo = getWeekInfo(curKey);
+  const options = [];
+
+  for (let offset = -2; offset <= 8; offset++) {
+    const targetDate = new Date(curInfo.startDate.getTime() + offset * 7 * 86400000);
+    const wkKey = getISOWeekKey(targetDate);
+    const wkInfo = getWeekInfo(wkKey);
+    options.push(wkInfo);
+  }
+  return options;
+}
+
+function createEmptyMealPlan() {
+  return {
+    monday: null,
+    tuesday: null,
+    wednesday: null,
+    thursday: null,
+    friday: null,
+    saturday: null,
+    sunday: null
+  };
+}
+
+function getActiveMealPlan() {
+  if (!state.selectedWeekKey) {
+    state.selectedWeekKey = getISOWeekKey(new Date());
+  }
+  state.mealPlans = state.mealPlans || {};
+  if (!state.mealPlans[state.selectedWeekKey]) {
+    state.mealPlans[state.selectedWeekKey] = createEmptyMealPlan();
+  }
+  state.mealPlan = state.mealPlans[state.selectedWeekKey];
+  return state.mealPlan;
+}
+
+function selectMealPlanWeek(weekKey) {
+  if (!weekKey || weekKey === state.selectedWeekKey) return;
+  state.selectedWeekKey = weekKey;
+  getActiveMealPlan();
+  saveCurrentUserData();
+  renderMealPlanView();
+
+  const wkInfo = getWeekInfo(weekKey);
+  showToast(`📅 Viser madplan for ${wkInfo.shortLabel} (${wkInfo.dateRangeText})`, 'info');
+}
+
+function copyCurrentWeekToNext() {
+  const curKey = state.selectedWeekKey || getISOWeekKey(new Date());
+  const curPlan = state.mealPlans[curKey] || createEmptyMealPlan();
+  const plannedCount = Object.values(curPlan).filter(v => v && v.recipeId).length;
+  if (plannedCount === 0) {
+    showToast('Ingen retter i denne uge at kopiere', 'info');
     return;
   }
+
+  const nextWeekKey = getAdjacentWeekKey(curKey, 1);
+  state.mealPlans[nextWeekKey] = JSON.parse(JSON.stringify(curPlan));
+  state.selectedWeekKey = nextWeekKey;
+  getActiveMealPlan();
+  saveCurrentUserData();
+  renderMealPlanView();
+
+  const nextInfo = getWeekInfo(nextWeekKey);
+  showToast(`📋 Madplan kopieret til ${nextInfo.shortLabel}! Du kan nu bygge videre.`, 'success');
+}
+
+// ─── DYNAMISK PERSON-SKALERING (PORTIONSSTØRRELSE) ───────────────────────────
+function setAppServings(newServings) {
+  const sVal = parseInt(newServings, 10);
+  if (!sVal) return;
+
+  state.servings = sVal;
+  saveCurrentUserData();
+
+  // Opdater visuelle knapper
+  dom.servingsBtns?.forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.servings, 10) === state.servings);
+  });
+  document.querySelectorAll('.mp-serving-pill').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.servings, 10) === state.servings);
+  });
+
+  if (dom.profileDefaultServings) dom.profileDefaultServings.value = String(state.servings);
+  if (dom.homeChipServingsVal) dom.homeChipServingsVal.textContent = `${state.servings} personer`;
+  if (dom.mpStatServings) dom.mpStatServings.textContent = `👥 ${state.servings} pers`;
+
+  // Opdater portionsstørrelsen for alle retter i den aktive madplan
+  const activePlan = getActiveMealPlan();
+  MEALPLAN_DAYS.forEach(d => {
+    if (activePlan[d.key] && activePlan[d.key].recipeId) {
+      activePlan[d.key].servings = sVal;
+    }
+  });
+
+  // Genberegn og genrender ALT der afhænger af antal personer
+  if (state.lastSearchResults) {
+    renderRecipeCards(state.lastSearchResults);
+  }
+  renderMealPlanView();
+  if (typeof renderShoppingListPage === 'function') renderShoppingListPage();
+  renderHomeDashboard();
+  renderHomeMealPlanPreview();
+
+  showToast(`👥 Skaleret til ${sVal} personer (råvarer, pakker, priser & kalorier opdateret)`, 'success');
+}
+
+// ─── VÆLG RET & UGEDAG MODAL ──────────────────────────────────────────────────
+function openAddToMealPlanModal(recipeId) {
+  const recipe = (window.RECIPES || []).find(r => r.id === recipeId);
+  if (!recipe) return;
+
   pendingMealPlanRecipeId = recipeId;
+
   if (dom.mpPickerRecipeTitle) {
     dom.mpPickerRecipeTitle.textContent = `Føj "${recipe.name}" til madplan`;
   }
 
-  if (dom.mealPlanPickerDaysGrid) {
-    dom.mealPlanPickerDaysGrid.innerHTML = MEALPLAN_DAYS.map(d => {
-      const currentEntry = state.mealPlan[d.key];
-      const hasDish = Boolean(currentEntry && currentEntry.recipeId);
-      let currentName = '';
-      if (hasDish) {
-        const curRecipe = (window.RECIPES || []).find(r => r.id === currentEntry.recipeId);
-        currentName = curRecipe ? curRecipe.name : 'Optaget';
-      }
-      return `
-        <button type="button" class="mealplan-day-picker-btn ${hasDish ? 'has-dish' : ''}" data-day="${d.key}">
-          <span class="day-name">🗓️ ${d.label}</span>
-          <span class="day-status">${hasDish ? `Erstatter: ${escapeHtml(currentName)}` : '✅ Ledig dag'}</span>
-        </button>
-      `;
+  // Ugevælger dropdown i modal
+  const modalWeekSelect = document.getElementById('mpModalWeekSelect');
+  if (modalWeekSelect) {
+    const weeks = getAvailableWeekOptions();
+    modalWeekSelect.innerHTML = weeks.map(w => {
+      const isSel = w.weekKey === (state.selectedWeekKey || getISOWeekKey(new Date()));
+      return `<option value="${w.weekKey}" ${isSel ? 'selected' : ''}>${w.label} ${w.isCurrent ? '(Denne uge)' : ''}</option>`;
     }).join('');
 
-    dom.mealPlanPickerDaysGrid.querySelectorAll('.mealplan-day-picker-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const dayKey = btn.dataset.day;
-        setMealPlanDay(dayKey, pendingMealPlanRecipeId);
-        closeMealPlanModal();
-      });
-    });
+    modalWeekSelect.onchange = () => {
+      renderModalDayPickerButtons(recipeId, modalWeekSelect.value);
+    };
   }
+
+  const initialWeekKey = modalWeekSelect?.value || state.selectedWeekKey || getISOWeekKey(new Date());
+  renderModalDayPickerButtons(recipeId, initialWeekKey);
 
   if (dom.mealPlanDayPickerModal) {
     dom.mealPlanDayPickerModal.classList.remove('hidden');
   }
+}
+
+function renderModalDayPickerButtons(recipeId, targetWeekKey) {
+  if (!dom.mealPlanPickerDaysGrid) return;
+
+  const targetPlan = (state.mealPlans && state.mealPlans[targetWeekKey]) || createEmptyMealPlan();
+
+  dom.mealPlanPickerDaysGrid.innerHTML = MEALPLAN_DAYS.map(d => {
+    const currentEntry = targetPlan[d.key];
+    const hasDish = Boolean(currentEntry && currentEntry.recipeId);
+    let currentName = '';
+    if (hasDish) {
+      const curRecipe = (window.RECIPES || []).find(r => r.id === currentEntry.recipeId);
+      currentName = curRecipe ? curRecipe.name : 'Optaget';
+    }
+    return `
+      <button type="button" class="mealplan-day-picker-btn ${hasDish ? 'has-dish' : ''}" data-day="${d.key}" data-week="${targetWeekKey}">
+        <span class="day-name">🗓️ ${d.label}</span>
+        <span class="day-status">${hasDish ? `Erstatter: ${escapeHtml(currentName)}` : '✅ Ledig dag'}</span>
+      </button>
+    `;
+  }).join('');
+
+  dom.mealPlanPickerDaysGrid.querySelectorAll('.mealplan-day-picker-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const dayKey = btn.dataset.day;
+      const weekKey = btn.dataset.week;
+      setMealPlanDay(dayKey, pendingMealPlanRecipeId, weekKey);
+      closeMealPlanModal();
+    });
+  });
 }
 
 function closeMealPlanModal() {
@@ -4369,29 +4572,44 @@ function closeMealPlanModal() {
   pendingMealPlanRecipeId = null;
 }
 
-function setMealPlanDay(dayKey, recipeId, servings = state.servings) {
+function setMealPlanDay(dayKey, recipeId, targetWeekKey = null, servings = state.servings) {
+  const weekKey = targetWeekKey || state.selectedWeekKey || getISOWeekKey(new Date());
+  state.mealPlans = state.mealPlans || {};
+  if (!state.mealPlans[weekKey]) {
+    state.mealPlans[weekKey] = createEmptyMealPlan();
+  }
+
   const recipe = (window.RECIPES || []).find(r => r.id === recipeId);
   if (!recipe) return;
   const dayInfo = MEALPLAN_DAYS.find(d => d.key === dayKey);
   const dayName = dayInfo ? dayInfo.label : dayKey;
 
-  state.mealPlan[dayKey] = {
+  state.mealPlans[weekKey][dayKey] = {
     recipeId: recipe.id,
     recipeName: recipe.name,
     servings: servings || state.servings,
     addedAt: Date.now()
   };
 
+  // Hvis vi tilføjede til den aktive uge, sync state.mealPlan
+  if (state.selectedWeekKey === weekKey) {
+    state.mealPlan = state.mealPlans[weekKey];
+  }
+
   saveCurrentUserData();
   renderMealPlanView();
   renderHomeMealPlanPreview();
-  showToast(`📅 ${recipe.name} sat på madplanen til ${dayName}!`, 'success');
+
+  const weekInfo = getWeekInfo(weekKey);
+  showToast(`📅 ${recipe.name} sat på madplanen til ${dayName} (${weekInfo.shortLabel})!`, 'success');
 }
 
 function removeMealPlanDay(dayKey) {
+  const activePlan = getActiveMealPlan();
   const dayInfo = MEALPLAN_DAYS.find(d => d.key === dayKey);
   const dayName = dayInfo ? dayInfo.label : dayKey;
-  state.mealPlan[dayKey] = null;
+  activePlan[dayKey] = null;
+
   saveCurrentUserData();
   renderMealPlanView();
   renderHomeMealPlanPreview();
@@ -4399,27 +4617,29 @@ function removeMealPlanDay(dayKey) {
 }
 
 function clearWeeklyMealPlan() {
-  if (!confirm('Er du sikker på, at du vil rydde hele ugens madplan?')) return;
-  MEALPLAN_DAYS.forEach(d => {
-    state.mealPlan[d.key] = null;
-  });
+  const weekInfo = getWeekInfo(state.selectedWeekKey || getISOWeekKey(new Date()));
+  if (!confirm(`Er du sikker på, at du vil rydde madplanen for ${weekInfo.shortLabel}?`)) return;
+
+  state.mealPlans[state.selectedWeekKey] = createEmptyMealPlan();
+  state.mealPlan = state.mealPlans[state.selectedWeekKey];
+
   saveCurrentUserData();
   renderMealPlanView();
   renderHomeMealPlanPreview();
-  showToast('Ugens madplan er nulstillet', 'info');
+  showToast(`Madplanen for ${weekInfo.shortLabel} er nulstillet`, 'info');
 }
 
-// ─── ANTI-MADSPILD: OVERLAP BEREGNING & ANBEFALINGER ──────────────────────────
+// ─── ANTI-MADSPILD: OVERLAP BEREGNING & ANBEFALINGER FOR VALGT UGE ────────────
 function computeAntiMadspildStats() {
-  const plannedDays = MEALPLAN_DAYS.filter(d => state.mealPlan[d.key] && state.mealPlan[d.key].recipeId);
+  const activePlan = getActiveMealPlan();
+  const plannedDays = MEALPLAN_DAYS.filter(d => activePlan[d.key] && activePlan[d.key].recipeId);
   const plannedRecipes = plannedDays.map(d => {
-    const entry = state.mealPlan[d.key];
+    const entry = activePlan[d.key];
     const rec = (window.RECIPES || []).find(r => r.id === entry.recipeId);
-    return { dayKey: d.key, dayLabel: d.label, recipe: rec };
+    return { dayKey: d.key, dayLabel: d.label, recipe: rec, servings: entry.servings || state.servings };
   }).filter(item => Boolean(item.recipe));
 
-  // Find råvarer på tværs af ugens retter
-  const ingUsageMap = new Map(); // key -> { name, days: Set of dayLabel }
+  const ingUsageMap = new Map();
 
   plannedRecipes.forEach(({ dayLabel, recipe }) => {
     const ingList = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
@@ -4439,100 +4659,68 @@ function computeAntiMadspildStats() {
   const sharedItems = Array.from(ingUsageMap.values()).filter(item => item.days.size >= 2);
   const singleUseItems = Array.from(ingUsageMap.values()).filter(item => item.days.size === 1);
 
-  // Anti-madspild score: 0-100%
   let wasteScore = 100;
-  if (totalDistinct > 0) {
-    // Jo flere råvarer der deles af mindst 2 måltider, jo højere score
-    const ratio = sharedItems.length / Math.max(1, totalDistinct);
-    wasteScore = Math.min(100, Math.round(50 + (ratio * 50) + (plannedRecipes.length * 5)));
+  if (plannedRecipes.length > 1) {
+    if (totalDistinct > 0) {
+      wasteScore = Math.min(100, Math.round((sharedItems.length / Math.max(1, totalDistinct)) * 220) + 35);
+    }
   }
 
-  // Find forslag til ledige dage baseret på råvarer der allerede købes
-  const emptyDays = MEALPLAN_DAYS.filter(d => !state.mealPlan[d.key]);
-  const leftoverKeys = new Set(Array.from(ingUsageMap.keys()));
-
+  // Anbefalinger af retter der udnytter råvarer til overs
+  const emptyDays = MEALPLAN_DAYS.filter(d => !activePlan[d.key]);
   const zeroWasteRecommendations = [];
-  if (emptyDays.length > 0 && leftoverKeys.size > 0) {
-    const currentRecipeIds = new Set(plannedRecipes.map(p => p.recipe.id));
-    const scoredCandidates = [];
 
-    (window.RECIPES || []).forEach(candidate => {
-      if (currentRecipeIds.has(candidate.id)) return;
-      const cIngList = Array.isArray(candidate.ingredients) ? candidate.ingredients : [];
-      let matchCount = 0;
+  if (emptyDays.length > 0 && singleUseItems.length > 0) {
+    const plannedIds = new Set(plannedRecipes.map(pr => pr.recipe.id));
+    const availableRecipes = (window.RECIPES || []).filter(r => !plannedIds.has(r.id));
+
+    availableRecipes.forEach(cand => {
+      const candIngKeys = (cand.ingredients || []).map(i => (i.searchKey || i.name || '').toLowerCase().trim());
       const matchedNames = [];
-
-      cIngList.forEach(ci => {
-        const cKey = (typeof ci === 'object' && ci.searchKey) ? ci.searchKey.toLowerCase().trim() : (ci.name || '').toLowerCase().trim();
-        if (leftoverKeys.has(cKey)) {
-          matchCount++;
-          matchedNames.push(ci.name || cKey);
+      singleUseItems.forEach(sItem => {
+        if (candIngKeys.some(ck => ck.includes(sItem.key) || sItem.key.includes(ck))) {
+          matchedNames.push(sItem.name);
         }
       });
-
-      if (matchCount >= 2) {
-        scoredCandidates.push({ recipe: candidate, matchCount, matchedNames: Array.from(new Set(matchedNames)) });
+      if (matchedNames.length > 0) {
+        zeroWasteRecommendations.push({
+          recipe: cand,
+          matchedNames: Array.from(new Set(matchedNames)),
+          matchCount: matchedNames.length
+        });
       }
     });
 
-    scoredCandidates.sort((a, b) => b.matchCount - a.matchCount);
-    zeroWasteRecommendations.push(...scoredCandidates.slice(0, 3));
+    zeroWasteRecommendations.sort((a, b) => b.matchCount - a.matchCount);
   }
 
   return {
     plannedCount: plannedRecipes.length,
-    totalDistinct,
+    totalDistinctIngredients: totalDistinct,
     sharedItems,
-    singleUseItems,
     wasteScore,
     emptyDays,
-    zeroWasteRecommendations,
-    plannedRecipes
+    zeroWasteRecommendations: zeroWasteRecommendations.slice(0, 3)
   };
 }
 
-// Auto-fyld tomme dage med retter der minimerer madspild
 function autoFillMealPlanZeroWaste() {
   const stats = computeAntiMadspildStats();
   if (stats.emptyDays.length === 0) {
-    showToast('Alle 7 dage er allerede planlagt!', 'info');
+    showToast('Ugen er allerede fuldt planlagt!', 'info');
     return;
   }
 
-  // Vælg kandidater
-  const currentIds = new Set(stats.plannedRecipes.map(p => p.recipe.id));
-  const candidatePool = (window.RECIPES || []).filter(r => !currentIds.has(r.id));
-  if (candidatePool.length === 0) return;
-
+  const activePlan = getActiveMealPlan();
+  const currentIds = new Set(MEALPLAN_DAYS.filter(d => activePlan[d.key]).map(d => activePlan[d.key].recipeId));
   let addedCount = 0;
+
   stats.emptyDays.forEach(day => {
-    // Vælg en ret der deler flest råvarer med hvad vi har
-    const currentStats = computeAntiMadspildStats();
-    const keys = new Set(Array.from(currentStats.sharedItems.map(i => i.key)).concat(currentStats.singleUseItems.map(i => i.key)));
-    
-    let best = null;
-    let bestScore = -1;
-
-    candidatePool.forEach(cand => {
-      if (currentIds.has(cand.id)) return;
-      let matches = 0;
-      (cand.ingredients || []).forEach(ci => {
-        const k = (ci.searchKey || ci.name || '').toLowerCase().trim();
-        if (keys.has(k)) matches++;
-      });
-      if (matches > bestScore) {
-        bestScore = matches;
-        best = cand;
-      }
-    });
-
-    if (!best) {
-      best = candidatePool[Math.floor(Math.random() * candidatePool.length)];
-    }
-
-    if (best) {
+    const candidates = (window.RECIPES || []).filter(r => !currentIds.has(r.id));
+    if (candidates.length > 0) {
+      const best = candidates[Math.floor(Math.random() * candidates.length)];
       currentIds.add(best.id);
-      state.mealPlan[day.key] = { recipeId: best.id, servings: state.servings, addedAt: Date.now() };
+      activePlan[day.key] = { recipeId: best.id, servings: state.servings, addedAt: Date.now() };
       addedCount++;
     }
   });
@@ -4540,7 +4728,7 @@ function autoFillMealPlanZeroWaste() {
   saveCurrentUserData();
   renderMealPlanView();
   renderHomeMealPlanPreview();
-  showToast(`✨ Udfyldte ${addedCount} dage med råvare-optimerede retter!`, 'success');
+  showToast(`✨ Udfyldte ${addedCount} dage med lækre opskrifter!`, 'success');
 }
 
 // ─── PRISBEREGNING AF ENKELT OPSKRIFT ──────────────────────────────────────────
@@ -4562,7 +4750,7 @@ function getRecipeAccuratePrice(recipe, servings = state.servings) {
     if (dbEntry) {
       const prices = Object.values(dbEntry).map(p => p.price).filter(p => typeof p === 'number');
       if (prices.length > 0) {
-        total += Math.min(...prices) * ratio * 0.7; // 0.7 estimerer faktisk forbrugt del af pakken
+        total += Math.min(...prices) * ratio * 0.7;
       } else {
         total += 11.50 * ratio;
       }
@@ -4577,10 +4765,11 @@ function getRecipeAccuratePrice(recipe, servings = state.servings) {
 // ─── SAMLET INDKØBSLISTE TIL HELE UGENS RETTER MED RIGTIGE PRISER ──────────────
 function getWeeklyAggregatedIngredients() {
   const aggregatedMap = new Map();
-  const plannedDays = MEALPLAN_DAYS.filter(d => state.mealPlan[d.key] && state.mealPlan[d.key].recipeId);
+  const activePlan = getActiveMealPlan();
+  const plannedDays = MEALPLAN_DAYS.filter(d => activePlan[d.key] && activePlan[d.key].recipeId);
 
   plannedDays.forEach(d => {
-    const entry = state.mealPlan[d.key];
+    const entry = activePlan[d.key];
     const rec = (window.RECIPES || []).find(r => r.id === entry.recipeId);
     if (!rec) return;
 
@@ -4735,7 +4924,6 @@ function getWeeklyAggregatedIngredients() {
     });
   });
 
-  // Find samlet billigste butik for hele ugen
   let bestStoreKey = 'rema';
   let bestStoreTotal = Infinity;
   stores.forEach(sKey => {
@@ -4760,23 +4948,28 @@ function getWeeklyAggregatedIngredients() {
   };
 }
 
-// ─── TJEKLISTE AFKRYDSNING & STATUS ───────────────────────────────────────────
+// ─── TJEKLISTE AFKRYDSNING & STATUS (GEMT PR. UGE) ────────────────────────────
 function toggleMealPlanItemCheck(itemKey, isChecked) {
+  const currentWeek = state.selectedWeekKey || getISOWeekKey(new Date());
   state.mealPlanCheckedItems = state.mealPlanCheckedItems || {};
+  state.mealPlanCheckedItems[currentWeek] = state.mealPlanCheckedItems[currentWeek] || {};
+
   if (isChecked) {
-    state.mealPlanCheckedItems[itemKey] = true;
+    state.mealPlanCheckedItems[currentWeek][itemKey] = true;
   } else {
-    delete state.mealPlanCheckedItems[itemKey];
+    delete state.mealPlanCheckedItems[currentWeek][itemKey];
   }
   saveCurrentUserData();
   updateMealPlanChecklistProgress();
 }
 
 function resetMealPlanCheckedItems() {
-  state.mealPlanCheckedItems = {};
+  const currentWeek = state.selectedWeekKey || getISOWeekKey(new Date());
+  state.mealPlanCheckedItems = state.mealPlanCheckedItems || {};
+  state.mealPlanCheckedItems[currentWeek] = {};
   saveCurrentUserData();
   renderMealPlanView();
-  showToast('Afkrydsning nulstillet', 'info');
+  showToast('Afkrydsning for denne uge er nulstillet', 'info');
 }
 
 function updateMealPlanChecklistProgress() {
@@ -4784,7 +4977,8 @@ function updateMealPlanChecklistProgress() {
   const totalItems = weekly.items.length;
   if (totalItems === 0) return;
 
-  const checkedKeys = Object.keys(state.mealPlanCheckedItems || {});
+  const currentWeek = state.selectedWeekKey || getISOWeekKey(new Date());
+  const checkedKeys = Object.keys((state.mealPlanCheckedItems && state.mealPlanCheckedItems[currentWeek]) || {});
   const checkedCount = weekly.items.filter(it => checkedKeys.includes(it.key)).length;
   const pct = Math.round((checkedCount / totalItems) * 100);
 
@@ -4805,17 +4999,17 @@ function printWeeklyShoppingList() {
     return;
   }
 
-  // Opdater print-overskrift med rigtige tal
   const headerDateEl = document.getElementById('mpPrintHeaderDate');
   const headerTotalEl = document.getElementById('mpPrintHeaderTotal');
   const headerSummaryEl = document.getElementById('mpPrintHeaderSummary');
 
-  const todayStr = new Date().toLocaleDateString('da-DK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const plannedCount = MEALPLAN_DAYS.filter(d => state.mealPlan[d.key]).length;
+  const weekInfo = getWeekInfo(state.selectedWeekKey || getISOWeekKey(new Date()));
+  const activePlan = getActiveMealPlan();
+  const plannedCount = MEALPLAN_DAYS.filter(d => activePlan[d.key]).length;
 
-  if (headerDateEl) headerDateEl.textContent = `Udskrevet ${todayStr} · ${plannedCount} måltider`;
+  if (headerDateEl) headerDateEl.textContent = `${weekInfo.shortLabel} (${weekInfo.dateRangeText}) · ${plannedCount} måltider · ${state.servings} personer`;
   if (headerTotalEl) headerTotalEl.textContent = `Est. pris: ${weekly.grandCheapestSum.toFixed(2)} kr`;
-  if (headerSummaryEl) headerSummaryEl.textContent = `${weekly.items.length} råvarer · Billigst: ${weekly.bestStoreKey.toUpperCase()} (${weekly.bestStoreTotal.toFixed(2)} kr)`;
+  if (headerSummaryEl) headerSummaryEl.textContent = `${weekly.items.length} råvarer · Billigst samlet: ${weekly.bestStoreKey.toUpperCase()} (${weekly.bestStoreTotal.toFixed(2)} kr)`;
 
   window.print();
 }
@@ -4827,6 +5021,7 @@ function transferMealPlanToShoppingList() {
     return;
   }
 
+  const weekInfo = getWeekInfo(state.selectedWeekKey || getISOWeekKey(new Date()));
   let added = 0;
   weekly.items.forEach(it => {
     const storeInfo = (window.STORES && window.STORES[it.cheapestStore]) || { name: it.cheapestStore.toUpperCase() };
@@ -4836,7 +5031,7 @@ function transferMealPlanToShoppingList() {
       id: 'mp_' + it.key + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       name: it.cheapestProductName || it.name,
       amount: it.packagesNeeded,
-      packageText: `${it.packagesNeeded} pk. à ${it.packageSizeText} (${it.usedInDays.join(', ')})`,
+      packageText: `${it.packagesNeeded} pk. à ${it.packageSizeText} (${weekInfo.shortLabel} · ${it.usedInDays.join(', ')})`,
       price: it.cheapestPrice,
       pant: 0,
       store: it.cheapestStore,
@@ -4850,19 +5045,52 @@ function transferMealPlanToShoppingList() {
 
   saveCurrentUserData();
   updateCartBadges();
-  renderShoppingListPage();
-  showToast(`🛒 Overførte ${added} råvarer til din indkøbsliste!`, 'success');
+  if (typeof renderShoppingListPage === 'function') renderShoppingListPage();
+  showToast(`🛒 Overførte ${added} råvarer til din indkøbsliste (${weekInfo.shortLabel})!`, 'success');
 }
 
-// ─── RENDERING AF MADPLAN VIEW MED REN UI/UX & TJEKLISTE ──────────────────────
+// ─── RENDERING AF MADPLAN VIEW MED MULTI-UGE & PERSON-SKALERING ───────────────
 function renderMealPlanView() {
   if (!dom.tabMealPlan) return;
+  const activePlan = getActiveMealPlan();
+  const currentWeek = state.selectedWeekKey || getISOWeekKey(new Date());
+  const weekInfo = getWeekInfo(currentWeek);
+
   const stats = computeAntiMadspildStats();
   const weekly = getWeeklyAggregatedIngredients();
   state.mealPlanViewMode = state.mealPlanViewMode || 'split';
-  state.mealPlanCheckedItems = state.mealPlanCheckedItems || {};
 
-  // 1. Top Quick Stats Pills
+  // 1. Ugevælger Bar & Dropdown
+  const weekDropdown = document.getElementById('mpWeekSelectDropdown');
+  if (weekDropdown) {
+    const weeks = getAvailableWeekOptions();
+    weekDropdown.innerHTML = weeks.map(w => {
+      const isSel = w.weekKey === currentWeek;
+      return `<option value="${w.weekKey}" ${isSel ? 'selected' : ''}>${w.label} ${w.isCurrent ? '(Denne uge)' : ''}</option>`;
+    }).join('');
+  }
+
+  const scheduleHeading = document.getElementById('mpScheduleHeading');
+  const scheduleWeekHint = document.getElementById('mpScheduleWeekHint');
+  if (scheduleHeading) {
+    scheduleHeading.textContent = `🗓️ 7-Dages Skema · ${weekInfo.shortLabel}`;
+  }
+  if (scheduleWeekHint) {
+    scheduleWeekHint.textContent = `${weekInfo.dateRangeText} ${weekInfo.isCurrent ? '· (Nuværende uge)' : ''} · Klik for at vælge eller bytte ret`;
+  }
+
+  // Opdater hurtig uge-indikator i header-knap hvis til stede
+  const weekIndicatorEl = document.getElementById('mpCurrentWeekIndicator');
+  if (weekIndicatorEl) {
+    weekIndicatorEl.style.display = weekInfo.isCurrent ? 'inline-block' : 'none';
+  }
+
+  // 2. Personer (Servings) knapper
+  document.querySelectorAll('.mp-serving-pill').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.servings, 10) === state.servings);
+  });
+
+  // 3. Top Quick Stats Pills
   if (dom.mpStatDays) dom.mpStatDays.textContent = `🍲 ${stats.plannedCount}/7 retter`;
   if (dom.mpStatPrice) dom.mpStatPrice.textContent = `💰 ${weekly.grandCheapestSum.toFixed(2)} kr`;
   if (dom.mpStatWasteScore) {
@@ -4871,18 +5099,18 @@ function renderMealPlanView() {
   }
   if (dom.mpStatServings) dom.mpStatServings.textContent = `👥 ${state.servings} pers`;
 
-  // 2. Kompakt Anti-Madspild Bånd (Ingen lange tekstblokke!)
+  // 4. Kompakt Anti-Madspild Bånd
   if (dom.mpWasteInsightBox) {
     if (stats.plannedCount === 0) {
       dom.mpWasteInsightBox.innerHTML = `
         <div class="mp-waste-empty-strip">
-          <span>🌱 <strong>Madspilds-assistent klar:</strong> Tilføj retter til ugens dage, så beregner MUMS automatisk genbrug af dine råvarer.</span>
+          <span>🌱 <strong>Madspilds-assistent for ${weekInfo.shortLabel}:</strong> Vælg retter til ugens dage, så beregner MUMS automatisk genbrug af dine råvarer.</span>
         </div>
       `;
     } else {
       const sharedHTML = stats.sharedItems.length > 0 ? `
         <div class="mp-waste-shared-inline">
-          <span class="mp-waste-lbl">♻️ Genbrugte råvarer:</span>
+          <span class="mp-waste-lbl">♻️ Genbrugte råvarer i ${weekInfo.shortLabel}:</span>
           <div class="mp-waste-chips">
             ${stats.sharedItems.map(it => `
               <span class="waste-tag-chip">🌱 ${escapeHtml(it.name)} <small>(${Array.from(it.days).join(' + ')})</small></span>
@@ -4925,13 +5153,14 @@ function renderMealPlanView() {
     }
   }
 
-  // 3. 7-Dages Skema Cards (Rent, visuelt, ingen tekst-overload)
+  // 5. 7-Dages Skema Cards
   if (dom.mealPlanWeekGrid) {
     const todayKey = getTodayDayKey();
+    const isTodayApplicable = weekInfo.isCurrent;
 
     dom.mealPlanWeekGrid.innerHTML = MEALPLAN_DAYS.map(d => {
-      const isToday = d.key === todayKey;
-      const entry = state.mealPlan[d.key];
+      const isToday = isTodayApplicable && (d.key === todayKey);
+      const entry = activePlan[d.key];
       const recipe = entry ? (window.RECIPES || []).find(r => r.id === entry.recipeId) : null;
 
       let bodyHTML = '';
@@ -4987,7 +5216,7 @@ function renderMealPlanView() {
     }).join('');
   }
 
-  // 4. Opdater Butiksbesparelse Badges
+  // 6. Opdater Butiksbesparelse Badges
   const splitBadge = document.getElementById('mpSplitSavingsBadge');
   const singleBadge = document.getElementById('mpSingleCheapestStoreBadge');
   if (splitBadge && weekly.savings > 0) {
@@ -4998,7 +5227,7 @@ function renderMealPlanView() {
     singleBadge.textContent = `${sName} (${weekly.bestStoreTotal.toFixed(0)} kr)`;
   }
 
-  // 5. Butikspris Sammenligning Bar
+  // 7. Butikspris Sammenligning Bar
   if (dom.mpStorePriceCompareBar) {
     if (weekly.items.length === 0) {
       dom.mpStorePriceCompareBar.innerHTML = '';
@@ -5020,18 +5249,21 @@ function renderMealPlanView() {
     }
   }
 
-  // 6. Indkøbstjekliste med Interaktive Checkboxes & Print Layout
+  // 8. Indkøbstjekliste
   renderMealPlanChecklist(weekly);
 }
 
 function renderMealPlanChecklist(weekly) {
   if (!dom.mpWeeklyIngredientsList) return;
+  const currentWeek = state.selectedWeekKey || getISOWeekKey(new Date());
+  const weekInfo = getWeekInfo(currentWeek);
+
   if (weekly.items.length === 0) {
     dom.mpWeeklyIngredientsList.innerHTML = `
       <div class="mp-checklist-empty">
         <span style="font-size:2rem; display:block; margin-bottom:8px;">🛒</span>
-        <strong>Din indkøbstjekliste er tom</strong>
-        <p style="font-size:0.85rem; color:var(--gray-500); margin:4px 0 12px 0;">Vælg retter til ugens dage ovenfor, så samler MUMS automatisk alle råvarer i hele butikspakker!</p>
+        <strong>Din indkøbstjekliste for ${weekInfo.shortLabel} er tom</strong>
+        <p style="font-size:0.85rem; color:var(--gray-500); margin:4px 0 12px 0;">Vælg retter til ${weekInfo.shortLabel} ovenfor, så samler MUMS automatisk alle råvarer skaleret til ${state.servings} personer!</p>
         <button type="button" class="btn btn-primary btn-sm" onclick="switchTab('recipes')">
           Gennemse opskrifter
         </button>
@@ -5046,12 +5278,11 @@ function renderMealPlanChecklist(weekly) {
   if (progressWrap) progressWrap.style.display = 'block';
 
   const viewMode = state.mealPlanViewMode || 'split';
-  const checkedKeys = Object.keys(state.mealPlanCheckedItems || {});
+  const checkedKeys = Object.keys((state.mealPlanCheckedItems && state.mealPlanCheckedItems[currentWeek]) || {});
 
   let html = '';
 
   if (viewMode === 'split') {
-    // ── GRUPPERET EFTER BILLIGSTE BUTIK (MAX BESPARELSE) ──
     const storesMap = {};
     weekly.items.forEach(it => {
       const s = it.cheapestStore || 'rema';
@@ -5071,7 +5302,7 @@ function renderMealPlanChecklist(weekly) {
           <div class="mp-store-group-header">
             <div class="mp-store-group-title">
               <span class="shop-store-badge tag-${sKey}">${storeInfo.name}</span>
-              <span class="mp-store-items-count">${storeItems.length} råvarer</span>
+              <span class="mp-store-items-count">${storeItems.length} råvarer (${weekInfo.shortLabel})</span>
             </div>
             <strong class="mp-store-group-total">${storeSum.toFixed(2)} kr</strong>
           </div>
@@ -5089,7 +5320,7 @@ function renderMealPlanChecklist(weekly) {
                         ${it.isOffer ? '<span class="badge-discount">TILBUD</span>' : ''}
                       </div>
                       <div class="mp-item-sub-info">
-                        <span class="mp-pkg-info">${it.packagesNeeded} pk. à ${it.packageSizeText}</span>
+                        <span class="mp-pkg-info">${it.packagesNeeded} pk. à ${it.packageSizeText} (${it.totalAmount} ${it.unit} til ${state.servings} pers)</span>
                         <span class="mp-days-info">· Til: ${it.usedInDays.join(', ')}</span>
                       </div>
                     </div>
@@ -5104,7 +5335,6 @@ function renderMealPlanChecklist(weekly) {
     }).join('');
 
   } else {
-    // ── SAMLET I ÉN BUTIK (NEMMEST) ──
     const chosenStore = state.mealPlanSelectedStore || weekly.bestStoreKey || 'rema';
     const storeInfo = (window.STORES && window.STORES[chosenStore]) || { name: chosenStore.toUpperCase() };
     const storeTotal = weekly.storeTotals[chosenStore] || 0;
@@ -5114,7 +5344,7 @@ function renderMealPlanChecklist(weekly) {
         <div class="mp-store-group-header">
           <div class="mp-store-group-title">
             <span class="shop-store-badge tag-${chosenStore}">${storeInfo.name} (Køb alt samlet)</span>
-            <span class="mp-store-items-count">${weekly.items.length} råvarer</span>
+            <span class="mp-store-items-count">${weekly.items.length} råvarer (${weekInfo.shortLabel})</span>
           </div>
           <strong class="mp-store-group-total">${storeTotal.toFixed(2)} kr</strong>
         </div>
@@ -5136,7 +5366,7 @@ function renderMealPlanChecklist(weekly) {
                       ${isOffer ? '<span class="badge-discount">TILBUD</span>' : ''}
                     </div>
                     <div class="mp-item-sub-info">
-                      <span class="mp-pkg-info">${it.packagesNeeded} pk. à ${it.packageSizeText}</span>
+                      <span class="mp-pkg-info">${it.packagesNeeded} pk. à ${it.packageSizeText} (${it.totalAmount} ${it.unit} til ${state.servings} pers)</span>
                       <span class="mp-days-info">· Til: ${it.usedInDays.join(', ')}</span>
                     </div>
                   </div>
@@ -5166,16 +5396,19 @@ function setMealPlanStoreView(viewMode, storeKey = null) {
   renderMealPlanView();
 }
 
-// ─── RENDERING AF FORSIDE MADPLAN STATUS ──────────────────────────────────────
+// ─── RENDERING AF FORSIDE MADPLAN STATUS (ALTID AKTUEL DAG I AKTUEL UGE) ───────
 function renderHomeMealPlanPreview() {
   if (!dom.homeMealPlanTodayContent) return;
+  const currentWeek = getISOWeekKey(new Date());
+  const currentPlan = (state.mealPlans && state.mealPlans[currentWeek]) || createEmptyMealPlan();
   const todayKey = getTodayDayKey();
-  const todayEntry = state.mealPlan[todayKey];
-  const plannedCount = MEALPLAN_DAYS.filter(d => state.mealPlan[d.key]).length;
+  const todayEntry = currentPlan[todayKey];
+  const plannedCount = MEALPLAN_DAYS.filter(d => currentPlan[d.key]).length;
 
   if (dom.homeMealPlanTodayTitle) {
     const todayName = MEALPLAN_DAYS.find(d => d.key === todayKey)?.label || 'I dag';
-    dom.homeMealPlanTodayTitle.textContent = `Aftensmad i dag (${todayName})`;
+    const weekInfo = getWeekInfo(currentWeek);
+    dom.homeMealPlanTodayTitle.textContent = `Aftensmad i dag (${todayName} · ${weekInfo.shortLabel})`;
   }
 
   if (todayEntry && todayEntry.recipeId) {
@@ -5203,7 +5436,6 @@ function renderHomeMealPlanPreview() {
     }
   }
 
-  // Ingen ret planlagt til i dag
   dom.homeMealPlanTodayContent.innerHTML = `
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--gray-50); padding:12px 14px; border-radius:var(--radius-sm); border:1px dashed var(--gray-300);">
       <div>
@@ -5227,6 +5459,30 @@ function initMealPlanUI() {
   dom.btnClearMealPlan?.addEventListener('click', clearWeeklyMealPlan);
   dom.btnTransferMealPlanToCart?.addEventListener('click', transferMealPlanToShoppingList);
   
+  // Ugevælger knapper & dropdown
+  document.getElementById('btnPrevWeek')?.addEventListener('click', () => {
+    selectMealPlanWeek(getAdjacentWeekKey(state.selectedWeekKey, -1));
+  });
+  document.getElementById('btnNextWeek')?.addEventListener('click', () => {
+    selectMealPlanWeek(getAdjacentWeekKey(state.selectedWeekKey, 1));
+  });
+  document.getElementById('btnJumpToCurrentWeek')?.addEventListener('click', () => {
+    selectMealPlanWeek(getISOWeekKey(new Date()));
+  });
+  document.getElementById('btnCopyWeekToNext')?.addEventListener('click', copyCurrentWeekToNext);
+
+  document.getElementById('mpWeekSelectDropdown')?.addEventListener('change', (e) => {
+    selectMealPlanWeek(e.target.value);
+  });
+
+  // Portioner / Servings knapper i madplan
+  document.querySelectorAll('.mp-serving-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sVal = parseInt(btn.dataset.servings, 10);
+      setAppServings(sVal);
+    });
+  });
+
   // Print knapper
   document.getElementById('btnPrintMealPlanChecklist')?.addEventListener('click', printWeeklyShoppingList);
   document.getElementById('btnPrintChecklistDirect')?.addEventListener('click', printWeeklyShoppingList);
@@ -5244,14 +5500,16 @@ function initMealPlanUI() {
       showToast('Ingen råvarer at kopiere', 'info');
       return;
     }
+    const weekInfo = getWeekInfo(state.selectedWeekKey || getISOWeekKey(new Date()));
     const lines = [
-      `🛒 MUMS Samlet Ugentlig Indkøbstjekliste (${weekly.items.length} råvarer)`,
-      `Samlet estimat: ${weekly.grandCheapestSum.toFixed(2)} kr (Billigst samlet: ${weekly.bestStoreKey.toUpperCase()} à ${weekly.bestStoreTotal.toFixed(2)} kr)`,
+      `🛒 MUMS Samlet Indkøbstjekliste – ${weekInfo.shortLabel} (${weekInfo.dateRangeText})`,
+      `Beregnet til ${state.servings} personer · Samlet estimat: ${weekly.grandCheapestSum.toFixed(2)} kr`,
+      `Billigst samlet: ${weekly.bestStoreKey.toUpperCase()} à ${weekly.bestStoreTotal.toFixed(2)} kr`,
       '',
       ...weekly.items.map(it => `- [ ] ${it.cheapestProductName || it.name}: ${it.packagesNeeded} pk. à ${it.packageSizeText} (${it.cheapestPrice.toFixed(2)} kr hos ${it.cheapestStore.toUpperCase()}) [Til: ${it.usedInDays.join(', ')}]`)
     ];
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
-      showToast('📋 Indkøbstjekliste kopieret til udklipsholder!', 'success');
+      showToast(`📋 Indkøbstjekliste for ${weekInfo.shortLabel} kopieret til udklipsholder!`, 'success');
     }).catch(() => {
       showToast('Kunne ikke kopiere liste', 'error');
     });
@@ -5328,6 +5586,15 @@ function init() {
     document.body.classList.add('compact-mode');
     if (dom.toggleCompactView) dom.toggleCompactView.checked = true;
   }
+
+  // Sørg for at den aktive uge er initialiseret (Uge 45 osv.)
+  if (!state.currentWeekKey) state.currentWeekKey = getISOWeekKey(new Date());
+  if (!state.selectedWeekKey) state.selectedWeekKey = state.currentWeekKey;
+  if (!state.mealPlans) state.mealPlans = {};
+  if (!state.mealPlans[state.selectedWeekKey]) {
+    state.mealPlans[state.selectedWeekKey] = state.mealPlan || createEmptyMealPlan();
+  }
+  state.mealPlan = state.mealPlans[state.selectedWeekKey];
 
   // Start på Hjem fanen
   renderHomeDashboard();
