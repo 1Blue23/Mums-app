@@ -220,7 +220,14 @@ const dom = {
   pageShoppingPantSum: document.getElementById('pageShoppingPantSum'),
   pageShoppingBudgetStatus: document.getElementById('pageShoppingBudgetStatus'),
   pageBtnClearShoppingList: document.getElementById('pageBtnClearShoppingList'),
+  pageBtnClearCheckedShoppingList: document.getElementById('pageBtnClearCheckedShoppingList'),
+  pageBtnShareShoppingList: document.getElementById('pageBtnShareShoppingList'),
   pageBtnCopyShoppingList: document.getElementById('pageBtnCopyShoppingList'),
+  pageShoppingProgress: document.getElementById('pageShoppingProgress'),
+  shoppingProgressBarWrap: document.getElementById('shoppingProgressBarWrap'),
+  shoppingProgressBar: document.getElementById('shoppingProgressBar'),
+  checkedCountSpan: document.getElementById('checkedCountSpan'),
+  btnClearOfferSearch: document.getElementById('btnClearOfferSearch'),
   pageManualItemInput: document.getElementById('pageManualItemInput'),
   pageBtnAddManualItem: document.getElementById('pageBtnAddManualItem'),
   shoppingEmptyNotice: document.getElementById('shoppingEmptyNotice'),
@@ -1271,9 +1278,24 @@ function initOffersSection() {
 
   // Søgefelt i tilbud
   dom.offerSearchInput?.addEventListener('input', () => {
-    state.offerSearchQuery = (dom.offerSearchInput.value || '').trim().toLowerCase();
+    const q = (dom.offerSearchInput.value || '').trim().toLowerCase();
+    state.offerSearchQuery = q;
     state.offersPage = 1;
+    if (dom.btnClearOfferSearch) {
+      dom.btnClearOfferSearch.style.display = q.length > 0 ? 'block' : 'none';
+    }
     renderOffers();
+  });
+
+  dom.btnClearOfferSearch?.addEventListener('click', () => {
+    if (dom.offerSearchInput) {
+      dom.offerSearchInput.value = '';
+      if (dom.btnClearOfferSearch) dom.btnClearOfferSearch.style.display = 'none';
+      state.offerSearchQuery = '';
+      state.offersPage = 1;
+      renderOffers();
+      dom.offerSearchInput.focus();
+    }
   });
 
   // Pagination: Vis flere tilbud
@@ -4146,6 +4168,68 @@ function switchTab(tabName) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+
+function initKeyboardShortcuts() {
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    const isTyping = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
+
+    // Tast '/' for lynhurtig søgning (hvis man ikke allerede skriver i et tekstfelt)
+    if (e.key === '/' && !isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      const currentTab = state.currentTab || 'home';
+      if (currentTab === 'offers') {
+        dom.offerSearchInput?.focus();
+        dom.offerSearchInput?.select();
+      } else {
+        const recipeTabBtn = document.querySelector('[data-tab="recipes"]');
+        if (recipeTabBtn && currentTab !== 'recipes') {
+          recipeTabBtn.click();
+        }
+        setTimeout(() => {
+          dom.recipeSearchInput?.focus();
+          dom.recipeSearchInput?.select();
+        }, 50);
+      }
+    }
+
+    // Tast 'Escape' for at lukke modaler eller rydde søgning
+    if (e.key === 'Escape') {
+      const openModals = [
+        dom.shoppingListModal,
+        dom.mealPlanDayPickerModal,
+        dom.apiModal,
+        dom.storeModal,
+        dom.authModal,
+        dom.profileModal,
+        dom.locationModal
+      ];
+      let closedModal = false;
+      openModals.forEach(modal => {
+        if (modal && !modal.classList.contains('hidden')) {
+          modal.classList.add('hidden');
+          closedModal = true;
+        }
+      });
+      if (closedModal) return;
+
+      if (document.activeElement === dom.recipeSearchInput) {
+        if (dom.recipeSearchInput.value) {
+          dom.recipeSearchInput.value = '';
+          dom.recipeSearchInput.dispatchEvent(new Event('input'));
+        }
+        dom.recipeSearchInput.blur();
+      } else if (document.activeElement === dom.offerSearchInput) {
+        if (dom.offerSearchInput.value) {
+          dom.offerSearchInput.value = '';
+          dom.offerSearchInput.dispatchEvent(new Event('input'));
+        }
+        dom.offerSearchInput.blur();
+      }
+    }
+  });
+}
+
 function initTabNavigation() {
   // Bundnavigation og desktop top-nav knapper
   document.querySelectorAll('.nav-tab-btn').forEach(btn => {
@@ -4290,6 +4374,115 @@ function initHomeLocationShortcut() {
 }
 
 // ─── 4. FANEN: INDKØBSLISTE (DEDIKERET SIDE MED AFKRYDSNING & RUTE) ───────────
+function updateShoppingProgress() {
+  const list = state.shoppingList || [];
+  const total = list.length;
+  
+  if (total === 0) {
+    if (dom.shoppingProgressBarWrap) dom.shoppingProgressBarWrap.classList.add('hidden');
+    if (dom.pageShoppingProgress) dom.pageShoppingProgress.textContent = '0 / 0 varer (0%)';
+    if (dom.checkedCountSpan) dom.checkedCountSpan.textContent = '0';
+    return;
+  }
+
+  let checkedCount = 0;
+  for (let i = 0; i < total; i++) {
+    if (state.checkedShoppingItems && state.checkedShoppingItems[i]) {
+      checkedCount++;
+    }
+  }
+
+  const pct = Math.round((checkedCount / total) * 100);
+
+  if (dom.checkedCountSpan) {
+    dom.checkedCountSpan.textContent = String(checkedCount);
+  }
+
+  if (dom.pageShoppingProgress) {
+    if (checkedCount === total && total > 0) {
+      dom.pageShoppingProgress.innerHTML = `<span style="color:#10b981; font-weight:800;">🎉 Alle varer købt! (${total}/${total})</span>`;
+    } else {
+      dom.pageShoppingProgress.textContent = `${checkedCount} / ${total} varer (${pct}%)`;
+    }
+  }
+
+  if (dom.shoppingProgressBarWrap) {
+    dom.shoppingProgressBarWrap.classList.remove('hidden');
+  }
+  if (dom.shoppingProgressBar) {
+    dom.shoppingProgressBar.style.width = `${pct}%`;
+  }
+}
+
+function shareShoppingList() {
+  const list = state.shoppingList || [];
+  if (list.length === 0) {
+    showToast('Indkøbslisten er tom', 'error');
+    return;
+  }
+
+  const storeGroups = {};
+  let totalSum = 0;
+  let pantSum = 0;
+
+  list.forEach(item => {
+    const sKey = item.storeKey || 'diverse';
+    if (!storeGroups[sKey]) {
+      storeGroups[sKey] = {
+        loc: getStoreLocationInfo(sKey),
+        items: [],
+      };
+    }
+    storeGroups[sKey].items.push(item);
+    if (item.hasPrice && typeof item.totalPrice === 'number') totalSum += item.totalPrice;
+    if (item.pant > 0) pantSum += item.pant;
+  });
+
+  const lines = [
+    '🛒 MUMS INDKØBSLISTE',
+    `Samlet beløb: ca. ${totalSum.toFixed(2)} kr` + (pantSum > 0 ? ` (+ ${pantSum.toFixed(2)} kr pant)` : ''),
+    '',
+  ];
+
+  Object.entries(storeGroups).forEach(([sKey, grp]) => {
+    const storeName = grp.loc?.label || sKey.toUpperCase();
+    lines.push(`📍 ${storeName}:`);
+    grp.items.forEach(item => {
+      const priceText = item.hasPrice ? ` (${item.totalPrice.toFixed(2)} kr)` : '';
+      lines.push(`• ${item.productName}: ${item.packagesNeeded} pk à ${item.packageSizeText}${priceText}`);
+    });
+    lines.push('');
+  });
+
+  lines.push('Delt via MUMS App');
+  const fullText = lines.join('\n');
+
+  if (navigator.share) {
+    navigator.share({
+      title: 'Min Indkøbsliste - MUMS',
+      text: fullText,
+    }).catch(err => {
+      if (err.name !== 'AbortError') {
+        copyTextFallback(fullText);
+      }
+    });
+  } else {
+    copyTextFallback(fullText);
+  }
+}
+
+function copyTextFallback(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('📋 Indkøbsliste kopieret til udklipsholder!', 'success');
+    }).catch(() => {
+      showToast('Kunne ikke kopiere liste', 'error');
+    });
+  } else {
+    showToast('Kopiering ikke understøttet', 'error');
+  }
+}
+
 function renderShoppingListPage() {
   if (!dom.pageShoppingListContainer) return;
   dom.pageShoppingListContainer.innerHTML = '';
@@ -4302,6 +4495,7 @@ function renderShoppingListPage() {
     if (dom.pageShoppingTotalSum) dom.pageShoppingTotalSum.textContent = '0,00 kr';
     if (dom.pageShoppingPantSum) dom.pageShoppingPantSum.textContent = '0,00 kr';
     if (dom.pageShoppingBudgetStatus) dom.pageShoppingBudgetStatus.textContent = 'Ingen varer';
+    updateShoppingProgress();
     return;
   }
 
@@ -4412,12 +4606,14 @@ function renderShoppingListPage() {
         state.checkedShoppingItems[idx] = e.target.checked;
         const row = card.querySelector(`.shopping-checklist-item[data-idx="${idx}"]`);
         if (row) row.classList.toggle('checked', e.target.checked);
+        updateShoppingProgress();
         saveCurrentUserData();
       });
     });
 
     dom.pageShoppingListContainer.appendChild(card);
   });
+  updateShoppingProgress();
 }
 
 function initShoppingListPageUI() {
@@ -4454,6 +4650,30 @@ function initShoppingListPageUI() {
       saveCurrentUserData();
       showToast('Indkøbsliste ryddet', 'info');
     }
+  });
+
+  // Fjern kun de afkrydsede / købte varer (QoL)
+  dom.pageBtnClearCheckedShoppingList?.addEventListener('click', () => {
+    const list = state.shoppingList || [];
+    const checkedCount = Object.keys(state.checkedShoppingItems || {}).filter(k => state.checkedShoppingItems[k]).length;
+
+    if (checkedCount === 0) {
+      showToast('Ingen varer er afkrydset endnu', 'info');
+      return;
+    }
+
+    if (confirm(`Vil du fjerne de ${checkedCount} afkrydsede varer fra indkøbslisten?`)) {
+      state.shoppingList = list.filter((_, idx) => !state.checkedShoppingItems[idx]);
+      state.checkedShoppingItems = {};
+      renderShoppingListPage();
+      saveCurrentUserData();
+      showToast(`🧹 ${checkedCount} købte varer fjernet fra listen!`, 'success');
+    }
+  });
+
+  // Del indkøbsliste via native deling (SMS, WhatsApp, Mail) eller udklipsholder (QoL)
+  dom.pageBtnShareShoppingList?.addEventListener('click', () => {
+    shareShoppingList();
   });
 
   // Kopiér indkøbsliste
@@ -5973,6 +6193,7 @@ function init() {
   initTabNavigation();
   initHomeLocationShortcut();
   initShoppingListPageUI();
+  initKeyboardShortcuts();
   initProfileViewUI();
   initMealPlanUI();
 

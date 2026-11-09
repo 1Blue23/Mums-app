@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=17" />
+  <link rel="stylesheet" href="style.css?v=18" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -462,7 +462,8 @@
         <!-- Enkelt samlet søgefelt og fokus-vælger -->
         <div class="recipe-quick-search-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px;">
           <div class="recipe-search-input-wrap" style="position: relative; flex: 1; min-width: 240px;">
-            <input type="text" id="recipeSearchInput" placeholder="🔎 Søg efter ret eller råvare (fx lasagne, kylling, pasta, laks)..." class="recipe-search-input" style="width: 100%; padding-right: 32px;" />
+            <input type="text" id="recipeSearchInput" placeholder="🔎 Søg efter ret eller råvare (fx lasagne, kylling, pasta, laks)..." class="recipe-search-input" style="width: 100%; padding-right: 56px;" />
+            <span class="search-kbd-hint" style="position: absolute; right: 32px; top: 50%; transform: translateY(-50%);" title="Hurtigtast: Tryk på '/' for at søge">/</span>
             <button type="button" id="btnClearRecipeSearch" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 16px; color: var(--gray-400); cursor: pointer; padding: 4px;" title="Ryd søgefelt">✕</button>
           </div>
           
@@ -592,7 +593,10 @@
         </div>
 
         <div class="offers-search-row" style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-          <input type="text" id="offerSearchInput" class="recipe-search-input" style="flex: 1; min-width: 200px;" placeholder="🔎 Søg blandt 65+ tilbud (fx cola, oksekød, smør, pasta, kaffe...)" />
+          <div style="position: relative; flex: 1; min-width: 200px;">
+            <input type="text" id="offerSearchInput" class="recipe-search-input" style="width: 100%; padding-right: 32px;" placeholder="🔎 Søg blandt 65+ tilbud (fx cola, oksekød, smør, pasta, kaffe...)" />
+            <button type="button" id="btnClearOfferSearch" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 16px; color: var(--gray-400); cursor: pointer; padding: 4px;" title="Ryd søgning">✕</button>
+          </div>
           
           <div class="offers-sort-wrap" style="display: flex; align-items: center; gap: 8px;">
             <label for="offerSortSelect" style="font-size: 13px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Sorter:</label>
@@ -633,9 +637,11 @@
             <h1 class="page-main-title">🛒 Min Indkøbsliste</h1>
             <p class="page-subtitle" id="pageShoppingSubTitle">Beregnet ud fra dine valgte retter og konkrete pakningsstørrelser</p>
           </div>
-          <div class="shopping-header-actions">
-            <button id="pageBtnClearShoppingList" class="btn-sm btn-secondary">🗑️ Ryd liste</button>
-            <button id="pageBtnCopyShoppingList" class="btn-sm btn-secondary">📋 Kopiér</button>
+          <div class="shopping-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="pageBtnClearShoppingList" class="btn-sm btn-secondary" title="Tøm hele indkøbslisten">🗑️ Ryd alt</button>
+            <button id="pageBtnClearCheckedShoppingList" class="btn-sm btn-secondary" title="Fjern kun de varer du allerede har lagt i kurven">🧹 Fjern købte (<span id="checkedCountSpan">0</span>)</button>
+            <button id="pageBtnShareShoppingList" class="btn-sm btn-secondary" title="Del listen via SMS, WhatsApp eller Mail">📲 Del liste</button>
+            <button id="pageBtnCopyShoppingList" class="btn-sm btn-secondary" title="Kopiér listen til udklipsholder">📋 Kopiér</button>
           </div>
         </div>
 
@@ -653,6 +659,15 @@
             <span class="ov-label">Budget status</span>
             <span class="ov-val" id="pageShoppingBudgetStatus">Inden for budget</span>
           </div>
+          <div class="overview-item">
+            <span class="ov-label">Kurvestatus</span>
+            <span class="ov-val" id="pageShoppingProgress" style="font-size: 0.95rem;">0 / 0 varer (0%)</span>
+          </div>
+        </div>
+
+        <!-- Indkøbsfremgang progress bar -->
+        <div id="shoppingProgressBarWrap" class="shopping-progress-bar-wrap hidden">
+          <div id="shoppingProgressBar" class="shopping-progress-bar-fill" style="width: 0%;"></div>
         </div>
 
         <!-- Hurtig tilføj råvare -->
@@ -1333,10 +1348,10 @@
   </footer>
 
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
-  <script src="data.js?v=17"></script>
-  <script src="recipes_db.js?v=17"></script>
-  <script src="live_offers.js?v=17"></script>
-  <script src="app.js?v=17"></script>
+  <script src="data.js?v=18"></script>
+  <script src="recipes_db.js?v=18"></script>
+  <script src="live_offers.js?v=18"></script>
+  <script src="app.js?v=18"></script>
   <!-- FLYDENDE SCROLL TIL TOPPEN KNAP (QoL) -->
   <button id="btnBackToTop" class="btn-back-to-top" title="Rul til toppen">⬆️</button>
 </body>
