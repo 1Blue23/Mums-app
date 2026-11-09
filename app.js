@@ -1162,7 +1162,7 @@ function renderOffers() {
       ? `<img src="${offer.image}" alt="${offer.name}" class="offer-thumb-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"><div class="offer-img-placeholder" style="display:none;">${offer.emoji || '🛒'}</div>`
       : `<div class="offer-img-placeholder">${offer.emoji || '🛒'}</div>`;
 
-    card.innerHTML = `
+        card.innerHTML = `
       ${discountBadge}
       ${liveBadge}
       ${imgHTML}
@@ -1809,42 +1809,53 @@ function findProductDbMatch(name = '', searchKey = '') {
     return 'salt';
   }
 
-    // Krydderier, saft, urter & smagsgivere (Direkte højprioritetsmatch)
-  if (/(citronsaft|citron saft|saft af citron)/i.test(n) || sk === 'citronsaft') return 'citronsaft';
-  if (/(limesaft|lime saft|saft af lime)/i.test(n) || sk === 'limesaft') return 'limesaft';
-  if (/(citron|citroner|citronskal)/i.test(n) || sk === 'citron') return 'citron';
-  if (/(lime|limes|limeskal)/i.test(n) || sk === 'lime') return 'lime';
-  if (/(groft salt|flagesalt|bordsalt|fint salt|havsalt|salt)/i.test(n) || sk === 'salt') return 'salt';
-  if ((/(friskkværnet peber|sort peber|hvidt peber|peberkorn|stødt peber|peber)/i.test(n) || sk === 'peber') && !/(peberfrugt|chilipeber|cayennepeber)/i.test(n)) return 'peber';
-  if (/(oregano|tørret oregano)/i.test(n) || sk === 'oregano') return 'oregano';
-  if (/(timian|frisk timian|tørret timian)/i.test(n) || sk === 'timian') return 'timian';
-  if (/(rosmarin|frisk rosmarin|tørret rosmarin)/i.test(n) || sk === 'rosmarin') return 'rosmarin';
-  if (/(spidskommen|stødt spidskommen)/i.test(n) || sk === 'spidskommen') return 'spidskommen';
-  if (/(paprika|sød paprika|røget paprika)/i.test(n) || sk === 'paprika') return 'paprika';
-  if (/(karry|karrypulver)/i.test(n) || sk === 'karry') return 'karry';
-  if (/(chili|chiliflager|cayennepeber)/i.test(n) || sk === 'chili') return 'chili';
-  if (/(kanel|stødt kanel)/i.test(n) || sk === 'kanel') return 'kanel';
-  if (/(muskat|muskatnød)/i.test(n) || sk === 'muskatnød') return 'muskatnød';
-  if (/(kardemomme)/i.test(n) || sk === 'kardemomme') return 'kardemomme';
-  if (/(sojasauce|sojasovs|soja)/i.test(n) || sk === 'sojasauce') return 'sojasauce';
-  if (/(balsamico|balsamicoeddike)/i.test(n) || sk === 'balsamico') return 'balsamico';
-  if (/(æbleeddike|æblecidereddike|hvidvinseddike|rødvinseddike|eddike)/i.test(n) || sk === 'eddike') return 'eddike';
-  if (/(dijonsennep|grov sennep|fransk sennep|sennep)/i.test(n) || sk === 'sennep') return 'sennep';
-  if (/(honning|flydende honning)/i.test(n) || sk === 'honning') return 'honning';
-  if (/(tomatpuré|tomatpure)/i.test(n) || sk === 'tomatpure' || sk === 'tomatpuré') return 'tomatpure';
-  if (/(grøntsagsbouillon|bouillon|bouillonterning)/i.test(n) || sk === 'grøntsagsbouillon' || sk === 'bouillon') return 'grøntsagsbouillon';
-  if (/(hønsebouillon)/i.test(n) || sk === 'hønsebouillon') return 'hønsebouillon';
-  if (/(oksebouillon)/i.test(n) || sk === 'oksebouillon') return 'oksebouillon';
-  if (/(olivenolie|jomfruolivenolie)/i.test(n) || sk === 'olivenolie') return 'olivenolie';
-  if (/(rapsolie|solsikkeolie|madolie|stegolie|olie til stegning)/i.test(n) || sk === 'olie') return 'olie';
-  if (/(smør|smørbar|stegesmør)/i.test(n) || sk === 'smør') return 'smør';
-  if (/(hvidløg|hvidløgsfed)/i.test(n) || sk === 'hvidløg') return 'hvidløg';
-  if (/(ingefær|frisk ingefær)/i.test(n) || sk === 'ingefær') return 'ingefær';
-  if (/(frisk dild|dild)/i.test(n) || sk === 'dild') return 'dild';
-  if (/(bredbladet persille|kruspersille|frisk persille|persille)/i.test(n) || sk === 'persille') return 'persille';
-  if (/(frisk basilikum|basilikum)/i.test(n) || sk === 'basilikum') return 'basilikum';
-  if (/(frisk koriander|koriander)/i.test(n) || sk === 'koriander') return 'koriander';
-  if (/(frisk purløg|purløg)/i.test(n) || sk === 'purløg') return 'purløg';
+    // Råvarer fra opskrifter (Højprioritetsmatches så intet tabes)
+  if (/\b(basilikumpesto|grøn pesto|rød pesto|pesto)\b/i.test(n) || sk === 'pesto') return 'pesto';
+  if (/\b(bladselleri|blade af bladselleri|selleri|selleristilk|selleristilke)\b/i.test(n) || sk === 'bladselleri') return 'bladselleri';
+  if (/\b(frosne ærter|grønne ærter|ærter)\b/i.test(n) || sk === 'ærter') return 'ærter';
+  if (/\b(frisk pasta|tagliolini|tagliatelle|fettuccine|spaghetti|båndpasta|skruer|pasta)\b/i.test(n) || sk === 'pasta') return 'pasta';
+  if (/\b(afdryppet tun|tun i vand|tun i olie|dåsetun|tun)\b/i.test(n) || sk === 'tun') return 'tun';
+  if (/\b(rødløg|stort rødløg)\b/i.test(n) || sk === 'rødløg') return 'rødløg';
+  if (/\b(madlavningsfløde|piskefløde|fløde)\b/i.test(n) || sk === 'fløde' || sk === 'madlavningsfløde') return 'fløde';
+  if (/\b(citronskal|fintrevet citronskal|citron|citroner)\b/i.test(n) || sk === 'citron') return 'citron';
+  if (/\b(postevand|vand fra hanen|koldt vand|vand)\b/i.test(n) || sk === 'vand') return 'vand';
+
+  // Krydderier, saft, urter & smagsgivere (Direkte højprioritetsmatch)
+  if (/\b(citronsaft|citron saft|saft af citron)\b/i.test(n) || sk === 'citronsaft') return 'citronsaft';
+  if (/\b(limesaft|lime saft|saft af lime)\b/i.test(n) || sk === 'limesaft') return 'limesaft';
+  if (/\b(citron|citroner|citronskal)\b/i.test(n) || sk === 'citron') return 'citron';
+  if (/\b(lime|limes|limeskal)\b/i.test(n) || sk === 'lime') return 'lime';
+  if (/\b(groft salt|flagesalt|bordsalt|fint salt|havsalt|salt)\b/i.test(n) || sk === 'salt') return 'salt';
+  if ((/\b(friskkværnet peber|sort peber|hvidt peber|peberkorn|stødt peber|peber)\b/i.test(n) || sk === 'peber') && !/\b(peberfrugt|chilipeber|cayennepeber)\b/i.test(n)) return 'peber';
+  if (/\b(oregano|tørret oregano)\b/i.test(n) || sk === 'oregano') return 'oregano';
+  if (/\b(timian|frisk timian|tørret timian)\b/i.test(n) || sk === 'timian') return 'timian';
+  if (/\b(rosmarin|frisk rosmarin|tørret rosmarin)\b/i.test(n) || sk === 'rosmarin') return 'rosmarin';
+  if (/\b(spidskommen|stødt spidskommen)\b/i.test(n) || sk === 'spidskommen') return 'spidskommen';
+  if (/\b(paprika|sød paprika|røget paprika)\b/i.test(n) || sk === 'paprika') return 'paprika';
+  if (/\b(karry|karrypulver)\b/i.test(n) || sk === 'karry') return 'karry';
+  if (/\b(chili|chiliflager|cayennepeber)\b/i.test(n) || sk === 'chili') return 'chili';
+  if (/\b(kanel|stødt kanel)\b/i.test(n) || sk === 'kanel') return 'kanel';
+  if (/\b(muskat|muskatnød)\b/i.test(n) || sk === 'muskatnød') return 'muskatnød';
+  if (/\b(kardemomme)\b/i.test(n) || sk === 'kardemomme') return 'kardemomme';
+  if (/\b(sojasauce|sojasovs|soja)\b/i.test(n) || sk === 'sojasauce') return 'sojasauce';
+  if (/\b(balsamico|balsamicoeddike)\b/i.test(n) || sk === 'balsamico') return 'balsamico';
+  if (/\b(æbleeddike|æblecidereddike|hvidvinseddike|rødvinseddike|eddike)\b/i.test(n) || sk === 'eddike') return 'eddike';
+  if (/\b(dijonsennep|grov sennep|fransk sennep|sennep)\b/i.test(n) || sk === 'sennep') return 'sennep';
+  if (/\b(honning|flydende honning)\b/i.test(n) || sk === 'honning') return 'honning';
+  if (/\b(tomatpuré|tomatpure)\b/i.test(n) || sk === 'tomatpure' || sk === 'tomatpuré') return 'tomatpure';
+  if (/\b(grøntsagsbouillon|bouillon|bouillonterning)\b/i.test(n) || sk === 'grøntsagsbouillon' || sk === 'bouillon') return 'grøntsagsbouillon';
+  if (/\b(hønsebouillon)\b/i.test(n) || sk === 'hønsebouillon') return 'hønsebouillon';
+  if (/\b(oksebouillon)\b/i.test(n) || sk === 'oksebouillon') return 'oksebouillon';
+  if (/\b(olivenolie|jomfruolivenolie)\b/i.test(n) || sk === 'olivenolie') return 'olivenolie';
+  if (/\b(rapsolie|solsikkeolie|madolie|stegolie|olie til stegning)\b/i.test(n) || sk === 'olie') return 'olie';
+  if (/\b(smør|smørbar|stegesmør)\b/i.test(n) || sk === 'smør') return 'smør';
+  if (/\b(hvidløg|hvidløgsfed)\b/i.test(n) || sk === 'hvidløg') return 'hvidløg';
+  if (/\b(ingefær|frisk ingefær)\b/i.test(n) || sk === 'ingefær') return 'ingefær';
+  if (/\b(frisk dild|dild)\b/i.test(n) || sk === 'dild') return 'dild';
+  if (/\b(bredbladet persille|kruspersille|frisk persille|persille)\b/i.test(n) || sk === 'persille') return 'persille';
+  if (/\b(frisk basilikum|basilikum)\b/i.test(n) || sk === 'basilikum') return 'basilikum';
+  if (/\b(frisk koriander|koriander)\b/i.test(n) || sk === 'koriander') return 'koriander';
+  if (/\b(frisk purløg|purløg)\b/i.test(n) || sk === 'purløg') return 'purløg';
 
   // 2. Direkte nøglematch på valideret sk og n
   if (sk && PRODUCT_DB[sk]) return sk;
@@ -3219,17 +3230,19 @@ function renderRecipeCards(searchResults = {}) {
       ? recipe.getScaledIngredients(state.servings)
       : recipe.ingredients;
 
-    // Flet dubletter af samme ingrediens sammen (f.eks. hvis olie/salt/løg optræder to gange)
+    // Flet dubletter af samme ingrediens sammen (kun hvis både ingrediens og måleenhed matcher, så INGEN råvarer tabes)
     const dedupedMap = new Map();
     rawScaled.forEach(ri => {
       const normKey = (ri.searchKey || ri.name || '').toLowerCase().trim();
-      if (dedupedMap.has(normKey)) {
-        const existing = dedupedMap.get(normKey);
-        if (typeof existing.amount === 'number' && typeof ri.amount === 'number' && existing.unit === ri.unit) {
+      const unitKey = (ri.unit || 'stk').toLowerCase().trim();
+      const mergeKey = `${normKey}__${unitKey}`;
+      if (dedupedMap.has(mergeKey)) {
+        const existing = dedupedMap.get(mergeKey);
+        if (typeof existing.amount === 'number' && typeof ri.amount === 'number') {
           existing.amount = parseFloat((existing.amount + ri.amount).toFixed(2));
         }
       } else {
-        dedupedMap.set(normKey, { ...ri });
+        dedupedMap.set(mergeKey, { ...ri });
       }
     });
     const scaledIngredients = Array.from(dedupedMap.values());
@@ -3476,6 +3489,24 @@ function renderRecipeCards(searchResults = {}) {
       `;
     }
 
+    // Byg Ingrediens-tjekliste med præcise mængder og afkrydsningscirkler (præcis som i opskriften)
+    const ingredientsChecklistHTML = scaledIngredients.map((ri, i) => {
+      let amtStr = '';
+      if (typeof ri.amount === 'number' && ri.amount > 0) {
+        amtStr = Number.isInteger(ri.amount) ? `${ri.amount}` : `${ri.amount.toFixed(1).replace('.0', '')}`;
+      }
+      const unitStr = ri.unit ? ` ${ri.unit}` : '';
+      const nameStr = ri.name || ri.searchKey;
+      return `
+        <li class="recipe-ingredient-check-item">
+          <label class="recipe-ing-check-label">
+            <input type="checkbox" class="recipe-ing-checkbox" data-ing-name="${encodeURIComponent(nameStr)}">
+            <span class="recipe-ing-text"><strong>${amtStr}${unitStr}</strong> ${nameStr}</span>
+          </label>
+        </li>
+      `;
+    }).join('');
+
     card.innerHTML = `
       <div class="recipe-card-top">
         <div class="recipe-emoji-big">${recipe.image ? `<img src="${recipe.image}" alt="${recipe.name}" class="recipe-thumb-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"><span style="display:none;">${recipe.emoji}</span>` : recipe.emoji}</div>
@@ -3509,13 +3540,21 @@ function renderRecipeCards(searchResults = {}) {
         <div class="recipe-chevron">▶</div>
       </div>
 
-      <!-- DROPDOWN INDKØBSLISTE & FREMGANGSMÅDE -->
+      <!-- DROPDOWN INDKØBSLISTE, INGREDIENSER & FREMGANGSMÅDE -->
       <div class="recipe-dropdown">
         <div class="recipe-dropdown-grid">
           
-          <!-- Fremgangsmåde -->
+          <!-- Venstre kolonne: Ingredienser & Fremgangsmåde -->
           <div class="dropdown-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+              <h3 style="margin:0;">🥗 Ingredienser <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(${state.servings} ${state.servings === 1 ? 'person' : 'personer'} – ${scaledIngredients.length} råvarer)</span></h3>
+              <span style="font-size:0.75rem; color:var(--gray-500);">Kryds af hvad du har</span>
+            </div>
+            <ul class="recipe-ingredients-checklist">
+              ${ingredientsChecklistHTML}
+            </ul>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px 0; flex-wrap:wrap; gap:6px;">
               <h3 style="margin:0;">👨‍🍳 Fremgangsmåde</h3>
               <button type="button" class="cook-mode-btn" onclick="toggleCookModeWakeLock(this, event)" title="Hold skærmen tændt mens du laver mad">
                 📱 Hold skærm tændt
@@ -3531,7 +3570,7 @@ function renderRecipeCards(searchResults = {}) {
             </ul>
           </div>
 
-          <!-- Indkøbsliste med pakningsberegninger -->
+          <!-- Højre kolonne: Indkøbsliste med pakningsberegninger -->
           <div class="dropdown-section">
             <h3>🛒 Hvor skal du købe hvad? <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(Beregnet i hele butikspakker – du betaler for den fulde pakke i butikken)</span></h3>
             <div class="shopping-list">
@@ -5087,7 +5126,7 @@ function getWeeklyAggregatedIngredients() {
       const unit = (ing.unit || 'stk').toLowerCase().trim();
 
       const matchedDbKey = typeof findProductDbMatch === 'function' ? findProductDbMatch(rawName, sKey) : null;
-      const aggKey = matchedDbKey || sKey || rawName.toLowerCase();
+      const aggKey = `${matchedDbKey || sKey || rawName.toLowerCase()}__${unit}`;
 
       if (aggregatedMap.has(aggKey)) {
         const existing = aggregatedMap.get(aggKey);
