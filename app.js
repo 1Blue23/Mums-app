@@ -1770,6 +1770,18 @@ function setupIngredientInputs() {
   });
 }
 
+// Hjælpefunktion: Identificér postevand / kogevand (skal ALDRIG på butiksindkøbslister)
+function isWaterIngredient(name = '', searchKey = '') {
+  const n = (name || '').toLowerCase().trim();
+  const sk = (searchKey || '').toLowerCase().trim();
+  if (/\b(danskvand|mineralvand|kokosvand|tonisk vand|tonic|tun i vand)\b/i.test(n) || /\b(danskvand|mineralvand|kokosvand|tonic)\b/i.test(sk)) {
+    return false;
+  }
+  if (sk === 'vand') return true;
+  return /^(vand|postevand|vand fra hanen|koldt vand|kogende vand|lunkent vand|varmt vand|isvand|pastavand)$/i.test(n) ||
+         /^(\d+[\d\.,\s\w]*\s+)?(vand|postevand|vand fra hanen|koldt vand|kogende vand|lunkent vand|varmt vand)$/i.test(n);
+}
+
 // ─── DANSK LINGVISTISK RÅVARE-NORMALISERING (Smart Matching mod PRODUCT_DB) ───
 function findProductDbMatch(name = '', searchKey = '') {
   if (typeof PRODUCT_DB === 'undefined') return null;
@@ -2765,9 +2777,31 @@ function updateCartBadge() {
 }
 
 function addRecipeToShoppingList(recipe) {
-  const scaledIngs = recipe.getScaledIngredients ? recipe.getScaledIngredients(state.servings) : recipe.ingredients;
+  const rawScaled = typeof recipe.getScaledIngredients === 'function'
+    ? recipe.getScaledIngredients(state.servings)
+    : recipe.ingredients;
+
+  const dedupedMap = new Map();
+  rawScaled.forEach(ri => {
+    const normKey = (ri.searchKey || ri.name || ri.ingredientName || '').toLowerCase().trim();
+    const unitKey = (ri.unit || 'stk').toLowerCase().trim();
+    const mergeKey = `${normKey}__${unitKey}`;
+    if (dedupedMap.has(mergeKey)) {
+      const existing = dedupedMap.get(mergeKey);
+      if (typeof existing.amount === 'number' && typeof ri.amount === 'number') {
+        existing.amount = parseFloat((existing.amount + ri.amount).toFixed(2));
+      }
+    } else {
+      dedupedMap.set(mergeKey, { ...ri });
+    }
+  });
+  const scaledIngs = Array.from(dedupedMap.values());
   
   scaledIngs.forEach(ing => {
+    // Vand fra hanen købes ikke i butikken
+    if (isWaterIngredient(ing.name || ing.ingredientName, ing.searchKey)) {
+      return;
+    }
     // Find billigste produkt for denne ingrediens på tværs af valgte butikker
     let bestShopItem = null;
 
@@ -3002,7 +3036,482 @@ async function performSearch() {
 }
 
 // ─── RENDERING AF OPSKRIFTSKORT MED DROPDOWN, ADRESSER & PANT ────────────────
+window.buildRecipeCard = buildRecipeCard;
+function buildRecipeCard({ recipe, ingMatchCount, matchPct, hasPrefs, hasNutrition }, index) {
+if (typeof window !== 'undefined') window.buildRecipeCard = buildRecipeCard;
+  const card = document.createElement('div');
+  const isTop = index === 0;
+
+  card.className = `recipe-card-outer ${isTop ? 'best-match' : ''}`;
+
+  let matchBadgeHTML = '';
+  if (hasPrefs) {
+    let badgeCls = 'badge-match-high';
+    if (matchPct < 65) badgeCls = 'badge-match-low';
+    else if (matchPct < 85) badgeCls = 'badge-match-mid';
+
+    matchBadgeHTML = `<span class="recipe-badge ${badgeCls}">🎯 ${matchPct}% Match</span>`;
+  }
+
+  let allergyBadgeHTML = '';
+  const userAllergies = state.allergies || [];
+  if (userAllergies.length > 0 && window.DataLayer?.allergens) {
+    const conflicting = window.DataLayer.allergens.recipeContainsAllergen(recipe, userAllergies);
+    if (conflicting.length > 0) {
+      const labels = conflicting.map(k => window.DataLayer.allergens.getLabel(k)).join(', ');
+      allergyBadgeHTML = `<span class="recipe-badge badge-allergy-warn" title="Indeholder dine registrerede allergener: ${labels}">⚠️ Indeholder ${labels}</span>`;
+    }
+  }
+
+  // 1. Skaler ingredienser ud fra state.servings (Antal Personer)
+  const rawScaled = typeof recipe.getScaledIngredients === 'function'
+    ? recipe.getScaledIngredients(state.servings)
+    : recipe.ingredients;
+
+  // Flet dubletter af samme ingrediens sammen (kun hvis både ingrediens og måleenhed matcher, så INGEN råvarer tabes)
+  const dedupedMap = new Map();
+  rawScaled.forEach(ri => {
+    const normKey = (ri.searchKey || ri.name || '').toLowerCase().trim();
+    const unitKey = (ri.unit || 'stk').toLowerCase().trim();
+    const mergeKey = `${normKey}__${unitKey}`;
+    if (dedupedMap.has(mergeKey)) {
+      const existing = dedupedMap.get(mergeKey);
+      if (typeof existing.amount === 'number' && typeof ri.amount === 'number') {
+        existing.amount = parseFloat((existing.amount + ri.amount).toFixed(2));
+      }
+    } else {
+      dedupedMap.set(mergeKey, { ...ri });
+    }
+  });
+  const scaledIngredients = Array.from(dedupedMap.values());
+
+  // 2. Beregn pakninger og priser via calculateShoppingItem (forbindelse Opskrift -> Ingrediens -> Produkt -> Pakke -> Pris)
+  let recipeIngredientsPrices = [];
+  let recipeCheapestTotal = 0;
+  let recipeTotalPant = 0;
+  let recipeHasMissingPrice = false;
+
+  scaledIngredients.forEach(ri => {
+    // Vand fra hanen skal ikke på butiksindkøbslisten
+    if (isWaterIngredient(ri.name, ri.searchKey)) {
+      return;
+    }
+
+    let cheapestItem = null;
+    let storeAlternatives = [];
+
+    const currentResults = (typeof searchResults !== 'undefined' ? searchResults : state.lastSearchResults) || {};
+    state.selectedStores.forEach(sKey => {
+      let prod = currentResults[ri.searchKey]?.[sKey] || currentResults[ri.name]?.[sKey];
+      let isLiveRema = false;
+
+      // Tjek REMA 1000 Live Cache for REMA 1000 butikken
+      if (sKey === 'rema' && window.DataLayer?.getCache) {
+        const cleanSk = (ri.searchKey || '').toLowerCase().trim();
+        const cleanName = (ri.name || '').toLowerCase().trim();
+        const cached = (cleanSk ? window.DataLayer.getCache(`mums_rema_search_${cleanSk}`) : null) || 
+                       (cleanName ? window.DataLayer.getCache(`mums_rema_search_${cleanName}`) : null);
+        if (cached && cached.data && cached.data.price > 0) {
+          prod = cached.data;
+          isLiveRema = true;
+        }
+      }
+
+      if (!prod) {
+        const matchKey = findProductDbMatch(ri.name, ri.searchKey);
+        if (matchKey && PRODUCT_DB[matchKey]?.[sKey]) {
+          prod = PRODUCT_DB[matchKey][sKey];
+        }
+      }
+
+      const shopItem = calculateShoppingItem({
+        ingredientName: ri.name,
+        neededAmount: ri.amount,
+        neededUnit: ri.unit,
+        product: prod,
+        storeKey: sKey,
+        activeOffers: state.weeklyOffers,
+      });
+
+      if (isLiveRema && shopItem) {
+        shopItem.isLiveRema = true;
+      }
+
+      if (shopItem && shopItem.hasPrice && shopItem.totalPrice !== null) {
+        storeAlternatives.push(shopItem);
+      }
+
+      if (!cheapestItem || (shopItem.totalPrice !== null && shopItem.totalPrice < (cheapestItem.totalPrice || Infinity))) {
+        cheapestItem = shopItem;
+      }
+    });
+
+    if (!cheapestItem) {
+      cheapestItem = calculateShoppingItem({
+        ingredientName: ri.name,
+        neededAmount: ri.amount,
+        neededUnit: ri.unit,
+        product: null,
+        storeKey: 'ukendt',
+        activeOffers: state.weeklyOffers,
+      });
+    }
+
+    cheapestItem.storeAlternatives = storeAlternatives;
+    recipeIngredientsPrices.push(cheapestItem);
+    if (cheapestItem.hasPrice && typeof cheapestItem.totalPrice === 'number') {
+      recipeCheapestTotal += cheapestItem.totalPrice;
+      recipeTotalPant += cheapestItem.pant || 0;
+    } else {
+      recipeHasMissingPrice = true;
+    }
+  });
+
+  // Grupper varerne pr. butik for en klar rute
+  const storeGroups = {};
+  recipeIngredientsPrices.forEach(item => {
+    if (!storeGroups[item.storeKey]) {
+      storeGroups[item.storeKey] = {
+        loc: getStoreLocationInfo(item.storeKey),
+        items: [],
+        total: 0,
+      };
+    }
+    storeGroups[item.storeKey].items.push(item);
+    if (item.hasPrice && typeof item.totalPrice === 'number') {
+      storeGroups[item.storeKey].total += item.totalPrice;
+    }
+  });
+
+  // Butikskort
+  const storeRouteCardsHTML = Object.entries(storeGroups).map(([sKey, group]) => {
+    const { loc, items, total } = group;
+    const itemsList = items.map(i => `${i.productName} (${i.packagesNeeded} pk = ${i.hasPrice ? i.totalPrice.toFixed(2) + ' kr' : 'pris mangler'})`).join(', ');
+    const mapsUrl = loc.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.mapsQuery || loc.address)}`;
+
+    return `
+      <div class="store-visit-card">
+        <div class="store-visit-top">
+          <div class="store-visit-name">
+            <span class="store-dot ${loc.storeKey}-dot"></span>
+            <strong>${loc.label}</strong>
+          </div>
+          <span class="store-visit-dist">📍 ${loc.distanceText} væk</span>
+        </div>
+        <div class="store-visit-address">Adresse: <strong>${loc.address}</strong></div>
+        <div class="store-visit-items">Varer du skal købe her (${items.length}): <strong>${itemsList}</strong> (I alt: ${total.toFixed(2)} kr)</div>
+        <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="store-visit-map-btn">
+          🗺️ Rutevejledning i Google Maps (${loc.distanceText}) ↗
+        </a>
+      </div>
+    `;
+  }).join('');
+
+  const storesBreakdownHTML = `
+    <div class="recipe-stores-breakdown">
+      <div class="stores-breakdown-title">🏬 Butikker du skal hen til for denne ret (og deres adresse):</div>
+      <div class="stores-breakdown-list">
+        ${storeRouteCardsHTML}
+      </div>
+    </div>
+  `;
+
+  // Shopping rækker med pakningsberegning
+  const shoppingRowsHTML = recipeIngredientsPrices.map(item => {
+    const storeLoc = getStoreLocationInfo(item.storeKey);
+    const pantBadge = item.pant > 0 ? `<span class="shop-pant-badge">+${item.pant.toFixed(2)} kr pant</span>` : '';
+    const pkgBadge = `<span class="pkg-badge">📦 ${item.packagesNeeded} pk. à ${item.packageSizeText}</span>`;
+    const liveRemaBadge = (item.isLiveRema || item.storeKey === 'rema') ? `<span class="live-rema-pill" title="Opdateret live via REMA 1000 API">🟢 Live REMA</span> ` : '';
+    const priceDisplay = item.hasPrice 
+      ? `${item.totalPrice.toFixed(2)} kr` 
+      : `<span class="shopping-item-missing">Pris mangler</span>`;
+
+    // Vis priser i øvrige supermarkeder
+    let alternativesHTML = '';
+    if (item.storeAlternatives && item.storeAlternatives.length > 1) {
+      const otherStores = item.storeAlternatives
+        .filter(alt => alt.storeKey !== item.storeKey && alt.hasPrice)
+        .sort((a, b) => a.totalPrice - b.totalPrice);
+
+      if (otherStores.length > 0) {
+        const chips = otherStores.map(alt => {
+          const locMeta = getStoreLocationInfo(alt.storeKey);
+          return `<span class="other-store-pill" style="font-size:0.73rem; padding:2px 6px; border-radius:4px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-secondary); display:inline-flex; align-items:center; gap:3px;">
+            <span class="store-dot ${locMeta.tagClass ? locMeta.tagClass.replace('tag-', '') + '-dot' : ''}"></span>
+            <strong>${locMeta.label}</strong>: ${alt.totalPrice.toFixed(2)} kr
+          </span>`;
+        }).join(' ');
+
+        alternativesHTML = `
+          <div class="shop-alternatives-row" style="margin-top: 6px; font-size: 0.76rem; color: var(--text-secondary);">
+            <span style="font-weight:600;">Kan også købes i:</span> ${chips}
+          </div>
+        `;
+      }
+    }
+
+    return `
+      <div class="shop-row">
+        <div class="shop-row-left">
+          <div class="shop-ingredient">${liveRemaBadge}${item.productName} ${item.isOffer ? '🔥' : ''} ${pantBadge}</div>
+          <div class="shop-amount">Opskrift bruger: <strong>${item.neededAmount} ${item.neededUnit}</strong> · <span class="pkg-badge" style="font-weight:600;">📦 Købes: ${item.packagesNeeded} hel pk. à ${item.packageSizeText}</span></div>
+          <div class="shop-package-notice" style="font-size:0.73rem; color:var(--text-secondary); margin-top:2px;">(Du betaler for hele pakken i butikken til fuld pris: <strong>${priceDisplay}</strong>)</div>
+          <div class="shop-item-address">
+            <span>📍 Nærmeste <strong>${storeLoc.label}</strong>: ${storeLoc.address}</span>
+            <span class="shop-dist-pill">${storeLoc.distanceText} væk</span>
+          </div>
+          ${alternativesHTML}
+        </div>
+        <div class="shop-row-right">
+          <span class="shop-store-badge ${storeLoc.tagClass} shop-clickable"
+                data-store="${item.storeKey}"
+                data-name="${encodeURIComponent(item.productName)}"
+                data-price="${item.totalPrice || 0}"
+                data-pant="${item.pant || 0}"
+                title="Klik for butiksinfo">
+            ${storeLoc.label} ↗
+          </span>
+          <div class="shop-price">${priceDisplay}</div>
+          <div style="font-size:0.70rem; color:var(--gray-400); text-align:right;">fuld butikspris</div>
+          ${item.isOffer && item.normalPrice ? `<span style="font-size:0.75rem; color:var(--gray-400); text-decoration:line-through; display:block;">Normal: ${(item.packagesNeeded * item.normalPrice).toFixed(2)} kr</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const totalPantNotice = recipeTotalPant > 0 
+    ? `<span>(+ ${recipeTotalPant.toFixed(2)} kr pant = ${(recipeCheapestTotal + recipeTotalPant).toFixed(2)} kr)</span>` 
+    : '';
+
+  // Budget beregning pr. ret
+  let budgetNoticeHTML = '';
+  if (state.budget && state.budget > 0 && !recipeHasMissingPrice) {
+    const isOver = recipeCheapestTotal > state.budget;
+    const diff = Math.abs(recipeCheapestTotal - state.budget);
+    if (isOver) {
+      budgetNoticeHTML = `<div class="recipe-budget-alert over" style="margin-top:8px; padding:6px 10px; border-radius:6px; font-size:0.8rem; font-weight:700;">⚠️ Overskrider dit budget (${state.budget} kr) med <strong>${diff.toFixed(2)} kr</strong></div>`;
+    } else {
+      budgetNoticeHTML = `<div class="recipe-budget-alert within" style="margin-top:8px; padding:6px 10px; border-radius:6px; font-size:0.8rem; font-weight:700;">✅ Inden for dit budget (${state.budget} kr) – <strong>${diff.toFixed(2)} kr</strong> tilovers</div>`;
+    }
+  }
+
+  // Kildehenvisning
+  let sourceLinkHTML = '';
+  if (recipe.sourceUrl) {
+    sourceLinkHTML = `<a href="${recipe.sourceUrl}" target="_blank" rel="noopener noreferrer" class="recipe-source-link" onclick="event.stopPropagation();">🔗 Kilde: ${recipe.source} ↗</a>`;
+  } else if (recipe.source) {
+    sourceLinkHTML = `<span style="font-size:0.78rem; color:var(--gray-500); margin-left:8px;">(${recipe.source})</span>`;
+  }
+
+  // Ernæringsbar (viser næring eller live Open Food Facts knap)
+  let nutrHTML = '';
+  if (recipe.nutrition && (recipe.nutrition.kcal || recipe.nutrition.protein)) {
+    const isLiveOff = recipe.nutritionSource === 'openfoodfacts.org';
+    const s = state.servings || 4;
+    const baseKcal = recipe.nutrition.kcal;
+    const totalKcal = (baseKcal !== undefined && baseKcal !== null) ? Math.round(baseKcal * s) : null;
+    const baseProt = recipe.nutrition.protein;
+    const totalProt = (baseProt !== undefined && baseProt !== null) ? Math.round(baseProt * s) : null;
+    const baseFat = recipe.nutrition.fat;
+    const totalFat = (baseFat !== undefined && baseFat !== null) ? Math.round(baseFat * s) : null;
+    const baseCarbs = recipe.nutrition.carbs;
+    const totalCarbs = (baseCarbs !== undefined && baseCarbs !== null) ? Math.round(baseCarbs * s) : null;
+
+    nutrHTML = `
+      <span class="nutr-pill nutr-kcal" title="${s} personer: ${totalKcal ?? '-'} kcal i alt">⚡ ${baseKcal ?? '—'} kcal/pers ${s > 1 && totalKcal ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalKcal} i alt)</small>` : ''}</span>
+      <span class="nutr-pill nutr-prot" title="${s} personer: ${totalProt ?? '-'}g protein i alt">🥩 ${baseProt ?? '—'}g prot${s > 1 && totalProt ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalProt}g)</small>` : ''}</span>
+      <span class="nutr-pill nutr-fat" title="${s} personer: ${totalFat ?? '-'}g fedt i alt">🥑 ${baseFat ?? '—'}g fedt</span>
+      <span class="nutr-pill nutr-carbs" title="${s} personer: ${totalCarbs ?? '-'}g kulhydrat i alt">🌾 ${baseCarbs ?? '—'}g kulh.</span>
+      ${recipe.nutrition.fiber !== undefined ? `<span class="nutr-pill">🥗 ${recipe.nutrition.fiber}g fibre</span>` : ''}
+      ${isLiveOff ? `<span class="nutr-live-tag">🟢 Open Food Facts</span>` : ''}
+    `;
+  } else {
+    nutrHTML = `
+      <button class="nutr-fetch-btn" id="nutrBtn_${recipe.id}" onclick="fetchLiveRecipeNutrition('${recipe.id}', event)" title="Hent næringsdata live fra Open Food Facts databasen">
+        🥗 Beregn næringsindhold live (Open Food Facts) ⚡
+      </button>
+    `;
+  }
+
+  // Byg Ingrediens-tjekliste med præcise mængder og afkrydsningscirkler (præcis som i opskriften)
+  const ingredientsChecklistHTML = scaledIngredients.map((ri, i) => {
+    let amtStr = '';
+    if (typeof ri.amount === 'number' && ri.amount > 0) {
+      amtStr = Number.isInteger(ri.amount) ? `${ri.amount}` : `${ri.amount.toFixed(1).replace('.0', '')}`;
+    }
+    const unitStr = ri.unit ? ` ${ri.unit}` : '';
+    const nameStr = ri.name || ri.searchKey;
+    return `
+      <li class="recipe-ingredient-check-item">
+        <label class="recipe-ing-check-label">
+          <input type="checkbox" class="recipe-ing-checkbox" data-ing-name="${encodeURIComponent(nameStr)}">
+          <span class="recipe-ing-text"><strong>${amtStr}${unitStr}</strong> ${nameStr}</span>
+        </label>
+      </li>
+    `;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="recipe-card-top">
+      <div class="recipe-emoji-big">${recipe.image ? `<img src="${recipe.image}" alt="${recipe.name}" class="recipe-thumb-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"><span style="display:none;">${recipe.emoji}</span>` : recipe.emoji}</div>
+      <div class="recipe-main">
+        <div class="recipe-title-row">
+          <h3 class="recipe-title">${recipe.name}</h3>
+          <span class="recipe-badge ${recipe.badgeClass}">${recipe.badge}</span>
+          ${allergyBadgeHTML}
+          ${matchBadgeHTML}
+          ${sourceLinkHTML}
+          <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+            <button type="button" class="btn btn-secondary btn-sm quick-add-mp-btn" data-recipe-id="${recipe.id}" title="Føj direkte til madplan" style="padding:4px 10px; font-size:0.75rem; font-weight:700; white-space:nowrap; border-radius:999px;">
+              📅 + Madplan
+            </button>
+            <button type="button" class="recipe-fav-btn ${(state.favoriteRecipes || []).includes(recipe.id) ? 'active' : ''}" data-recipe-id="${recipe.id}" title="${(state.favoriteRecipes || []).includes(recipe.id) ? 'Fjern fra favoritter' : 'Tilføj til favoritter'}">
+              ${(state.favoriteRecipes || []).includes(recipe.id) ? '❤️' : '🤍'}
+            </button>
+          </div>
+        </div>
+        <p class="recipe-desc">${recipe.desc}</p>
+        <div class="recipe-meta">
+          <span>⏱️ ${recipe.prepTime} min</span>
+          <span>👥 <strong>${state.servings} personer</strong> ${recipe.servings !== state.servings ? `(skaleret fra ${recipe.servings})` : ''}</span>
+          <span>🥕 ${(state.recipeSearchQuery || (state.ingredients && state.ingredients.length > 0)) ? `${ingMatchCount}/${recipe.ingredients.length} matchende råvarer` : `${recipe.ingredients.length} råvarer`}</span>
+        </div>
+        <div class="nutrition-bar">
+          ${nutrHTML}
+        </div>
+        ${budgetNoticeHTML}
+      </div>
+      <div class="recipe-chevron">▶</div>
+    </div>
+
+    <!-- DROPDOWN INDKØBSLISTE, INGREDIENSER & FREMGANGSMÅDE -->
+    <div class="recipe-dropdown">
+      <div class="recipe-dropdown-grid">
+        
+        <!-- Venstre kolonne: Ingredienser & Fremgangsmåde -->
+        <div class="dropdown-section">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <h3 style="margin:0;">🥗 Ingredienser <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(${state.servings} ${state.servings === 1 ? 'person' : 'personer'} – ${scaledIngredients.length} råvarer)</span></h3>
+            <span style="font-size:0.75rem; color:var(--gray-500);">Kryds af hvad du har</span>
+          </div>
+          <ul class="recipe-ingredients-checklist">
+            ${ingredientsChecklistHTML}
+          </ul>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px 0; flex-wrap:wrap; gap:6px;">
+            <h3 style="margin:0;">👨‍🍳 Fremgangsmåde</h3>
+            <button type="button" class="cook-mode-btn" onclick="toggleCookModeWakeLock(this, event)" title="Hold skærmen tændt mens du laver mad">
+              📱 Hold skærm tændt
+            </button>
+          </div>
+          <ul class="steps-list">
+            ${(recipe.steps || []).map((step, idx) => `
+              <li>
+                <span class="step-num">${idx + 1}</span>
+                <span>${step}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+
+        <!-- Højre kolonne: Indkøbsliste med pakningsberegninger -->
+        <div class="dropdown-section">
+          <h3>🛒 Hvor skal du købe hvad? <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(Beregnet i hele butikspakker – du betaler for den fulde pakke i butikken)</span></h3>
+          <div class="shopping-list">
+            ${shoppingRowsHTML}
+            <div class="shop-total-row">
+              <span>Samlet bedste pris:</span>
+              <span class="shop-total-price">${recipeCheapestTotal.toFixed(2)} kr ${totalPantNotice}</span>
+            </div>
+          </div>
+
+          <button class="add-recipe-cart-btn btn-primary btn-sm" data-recipe-id="${recipe.id}" style="width:100%; margin:10px 0 6px 0; padding:9px 14px; font-weight:800; cursor:pointer;">
+            🛒 Tilføj denne ret til samlet indkøbsliste (${state.servings} pers.)
+          </button>
+          <button class="add-recipe-mealplan-btn btn-secondary btn-sm" data-recipe-id="${recipe.id}" style="width:100%; margin:0 0 10px 0; padding:8px 14px; font-weight:700; cursor:pointer;">
+            📅 Sæt denne ret på ugens madplan
+          </button>
+
+          ${storesBreakdownHTML}
+
+          <button class="copy-list-btn" data-recipe-id="${recipe.id}">
+            📋 Kopier indkøbsliste & adresser til udklipsholder
+          </button>
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  // Dropdown toggle
+  const topBar = card.querySelector('.recipe-card-top');
+  topBar.addEventListener('click', () => {
+    const wasOpen = card.classList.contains('open');
+    document.querySelectorAll('.recipe-card-outer.open').forEach(c => c.classList.remove('open'));
+    if (!wasOpen) card.classList.add('open');
+  });
+
+  // Tilføj til samlet indkøbsliste knap
+  card.querySelector('.add-recipe-cart-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addRecipeToShoppingList(recipe);
+  });
+
+  // Føj til madplan knap
+  card.querySelector('.add-recipe-mealplan-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAddToMealPlanModal(recipe.id);
+  });
+
+  // Hurtig "+ Madplan" knap i toppen af kortet
+  card.querySelector('.quick-add-mp-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAddToMealPlanModal(recipe.id);
+  });
+
+  // Favorit-knap (❤️) i toppen af kortet
+  card.querySelector('.recipe-fav-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleFavoriteRecipe(recipe.id);
+  });
+
+  // Klikbare butiksbadges i indkøbslisten
+  card.querySelectorAll('.shop-store-badge.shop-clickable').forEach(badge => {
+    badge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const sKey = badge.dataset.store;
+      const pName = decodeURIComponent(badge.dataset.name);
+      const pPrice = parseFloat(badge.dataset.price);
+      const pPant = parseFloat(badge.dataset.pant || 0);
+      openStoreModal(sKey, pName, pPrice, pPant);
+    });
+  });
+
+  // Kopier indkøbsliste til udklipsholder
+  card.querySelector('.copy-list-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const lines = [
+      `🛒 Indkøbsliste til ${recipe.name} (${state.servings} personer)`,
+      `Samlet pris: ${recipeCheapestTotal.toFixed(2)} kr ${totalPantNotice}`,
+      '',
+      'VARER:',
+      ...recipeIngredientsPrices.map(item => {
+        const loc = getStoreLocationInfo(item.storeKey);
+        return `- ${item.productName}: ${item.packagesNeeded} pk. à ${item.packageSizeText} (${item.hasPrice ? item.totalPrice.toFixed(2) + ' kr' : 'pris mangler'}) hos ${loc.label}, ${loc.address}`;
+      }),
+    ];
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {        showToast('📋 Indkøbsliste kopieret til udklipsholder!', 'success');
+    }).catch(() => {
+      showToast('Kunne ikke kopiere til udklipsholder', 'error');
+    });
+  });
+
+  return card;
+}
+if (typeof window !== 'undefined') window.buildRecipeCard = buildRecipeCard;
+
 function renderRecipeCards(searchResults = {}) {
+  if (typeof window !== 'undefined') window.renderRecipeCards = renderRecipeCards;
   if (!dom.recipeCards) return;
   dom.recipeCards.innerHTML = '';
 
@@ -3200,470 +3709,7 @@ function renderRecipeCards(searchResults = {}) {
     return;
   }
 
-  function buildRecipeCard({ recipe, ingMatchCount, matchPct, hasPrefs, hasNutrition }, index) {
-    const card = document.createElement('div');
-    const isTop = index === 0;
 
-    card.className = `recipe-card-outer ${isTop ? 'best-match' : ''}`;
-
-    let matchBadgeHTML = '';
-    if (hasPrefs) {
-      let badgeCls = 'badge-match-high';
-      if (matchPct < 65) badgeCls = 'badge-match-low';
-      else if (matchPct < 85) badgeCls = 'badge-match-mid';
-
-      matchBadgeHTML = `<span class="recipe-badge ${badgeCls}">🎯 ${matchPct}% Match</span>`;
-    }
-
-    let allergyBadgeHTML = '';
-    const userAllergies = state.allergies || [];
-    if (userAllergies.length > 0 && window.DataLayer?.allergens) {
-      const conflicting = window.DataLayer.allergens.recipeContainsAllergen(recipe, userAllergies);
-      if (conflicting.length > 0) {
-        const labels = conflicting.map(k => window.DataLayer.allergens.getLabel(k)).join(', ');
-        allergyBadgeHTML = `<span class="recipe-badge badge-allergy-warn" title="Indeholder dine registrerede allergener: ${labels}">⚠️ Indeholder ${labels}</span>`;
-      }
-    }
-
-    // 1. Skaler ingredienser ud fra state.servings (Antal Personer)
-    const rawScaled = typeof recipe.getScaledIngredients === 'function'
-      ? recipe.getScaledIngredients(state.servings)
-      : recipe.ingredients;
-
-    // Flet dubletter af samme ingrediens sammen (kun hvis både ingrediens og måleenhed matcher, så INGEN råvarer tabes)
-    const dedupedMap = new Map();
-    rawScaled.forEach(ri => {
-      const normKey = (ri.searchKey || ri.name || '').toLowerCase().trim();
-      const unitKey = (ri.unit || 'stk').toLowerCase().trim();
-      const mergeKey = `${normKey}__${unitKey}`;
-      if (dedupedMap.has(mergeKey)) {
-        const existing = dedupedMap.get(mergeKey);
-        if (typeof existing.amount === 'number' && typeof ri.amount === 'number') {
-          existing.amount = parseFloat((existing.amount + ri.amount).toFixed(2));
-        }
-      } else {
-        dedupedMap.set(mergeKey, { ...ri });
-      }
-    });
-    const scaledIngredients = Array.from(dedupedMap.values());
-
-    // 2. Beregn pakninger og priser via calculateShoppingItem (forbindelse Opskrift -> Ingrediens -> Produkt -> Pakke -> Pris)
-    let recipeIngredientsPrices = [];
-    let recipeCheapestTotal = 0;
-    let recipeTotalPant = 0;
-    let recipeHasMissingPrice = false;
-
-    scaledIngredients.forEach(ri => {
-      let cheapestItem = null;
-      let storeAlternatives = [];
-
-      state.selectedStores.forEach(sKey => {
-        let prod = searchResults[ri.searchKey]?.[sKey] || searchResults[ri.name]?.[sKey];
-        let isLiveRema = false;
-
-        // Tjek REMA 1000 Live Cache for REMA 1000 butikken
-        if (sKey === 'rema' && window.DataLayer?.getCache) {
-          const cleanSk = (ri.searchKey || '').toLowerCase().trim();
-          const cleanName = (ri.name || '').toLowerCase().trim();
-          const cached = (cleanSk ? window.DataLayer.getCache(`mums_rema_search_${cleanSk}`) : null) || 
-                         (cleanName ? window.DataLayer.getCache(`mums_rema_search_${cleanName}`) : null);
-          if (cached && cached.data && cached.data.price > 0) {
-            prod = cached.data;
-            isLiveRema = true;
-          }
-        }
-
-        if (!prod) {
-          const matchKey = findProductDbMatch(ri.name, ri.searchKey);
-          if (matchKey && PRODUCT_DB[matchKey]?.[sKey]) {
-            prod = PRODUCT_DB[matchKey][sKey];
-          }
-        }
-
-        const shopItem = calculateShoppingItem({
-          ingredientName: ri.name,
-          neededAmount: ri.amount,
-          neededUnit: ri.unit,
-          product: prod,
-          storeKey: sKey,
-          activeOffers: state.weeklyOffers,
-        });
-
-        if (isLiveRema && shopItem) {
-          shopItem.isLiveRema = true;
-        }
-
-        if (shopItem && shopItem.hasPrice && shopItem.totalPrice !== null) {
-          storeAlternatives.push(shopItem);
-        }
-
-        if (!cheapestItem || (shopItem.totalPrice !== null && shopItem.totalPrice < (cheapestItem.totalPrice || Infinity))) {
-          cheapestItem = shopItem;
-        }
-      });
-
-      if (!cheapestItem) {
-        cheapestItem = calculateShoppingItem({
-          ingredientName: ri.name,
-          neededAmount: ri.amount,
-          neededUnit: ri.unit,
-          product: null,
-          storeKey: 'ukendt',
-          activeOffers: state.weeklyOffers,
-        });
-      }
-
-      cheapestItem.storeAlternatives = storeAlternatives;
-      recipeIngredientsPrices.push(cheapestItem);
-      if (cheapestItem.hasPrice && typeof cheapestItem.totalPrice === 'number') {
-        recipeCheapestTotal += cheapestItem.totalPrice;
-        recipeTotalPant += cheapestItem.pant || 0;
-      } else {
-        recipeHasMissingPrice = true;
-      }
-    });
-
-    // Grupper varerne pr. butik for en klar rute
-    const storeGroups = {};
-    recipeIngredientsPrices.forEach(item => {
-      if (!storeGroups[item.storeKey]) {
-        storeGroups[item.storeKey] = {
-          loc: getStoreLocationInfo(item.storeKey),
-          items: [],
-          total: 0,
-        };
-      }
-      storeGroups[item.storeKey].items.push(item);
-      if (item.hasPrice && typeof item.totalPrice === 'number') {
-        storeGroups[item.storeKey].total += item.totalPrice;
-      }
-    });
-
-    // Butikskort
-    const storeRouteCardsHTML = Object.entries(storeGroups).map(([sKey, group]) => {
-      const { loc, items, total } = group;
-      const itemsList = items.map(i => `${i.productName} (${i.packagesNeeded} pk = ${i.hasPrice ? i.totalPrice.toFixed(2) + ' kr' : 'pris mangler'})`).join(', ');
-      const mapsUrl = loc.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.mapsQuery || loc.address)}`;
-
-      return `
-        <div class="store-visit-card">
-          <div class="store-visit-top">
-            <div class="store-visit-name">
-              <span class="store-dot ${loc.storeKey}-dot"></span>
-              <strong>${loc.label}</strong>
-            </div>
-            <span class="store-visit-dist">📍 ${loc.distanceText} væk</span>
-          </div>
-          <div class="store-visit-address">Adresse: <strong>${loc.address}</strong></div>
-          <div class="store-visit-items">Varer du skal købe her (${items.length}): <strong>${itemsList}</strong> (I alt: ${total.toFixed(2)} kr)</div>
-          <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="store-visit-map-btn">
-            🗺️ Rutevejledning i Google Maps (${loc.distanceText}) ↗
-          </a>
-        </div>
-      `;
-    }).join('');
-
-    const storesBreakdownHTML = `
-      <div class="recipe-stores-breakdown">
-        <div class="stores-breakdown-title">🏬 Butikker du skal hen til for denne ret (og deres adresse):</div>
-        <div class="stores-breakdown-list">
-          ${storeRouteCardsHTML}
-        </div>
-      </div>
-    `;
-
-    // Shopping rækker med pakningsberegning
-    const shoppingRowsHTML = recipeIngredientsPrices.map(item => {
-      const storeLoc = getStoreLocationInfo(item.storeKey);
-      const pantBadge = item.pant > 0 ? `<span class="shop-pant-badge">+${item.pant.toFixed(2)} kr pant</span>` : '';
-      const pkgBadge = `<span class="pkg-badge">📦 ${item.packagesNeeded} pk. à ${item.packageSizeText}</span>`;
-      const liveRemaBadge = (item.isLiveRema || item.storeKey === 'rema') ? `<span class="live-rema-pill" title="Opdateret live via REMA 1000 API">🟢 Live REMA</span> ` : '';
-      const priceDisplay = item.hasPrice 
-        ? `${item.totalPrice.toFixed(2)} kr` 
-        : `<span class="shopping-item-missing">Pris mangler</span>`;
-
-      // Vis priser i øvrige supermarkeder
-      let alternativesHTML = '';
-      if (item.storeAlternatives && item.storeAlternatives.length > 1) {
-        const otherStores = item.storeAlternatives
-          .filter(alt => alt.storeKey !== item.storeKey && alt.hasPrice)
-          .sort((a, b) => a.totalPrice - b.totalPrice);
-
-        if (otherStores.length > 0) {
-          const chips = otherStores.map(alt => {
-            const locMeta = getStoreLocationInfo(alt.storeKey);
-            return `<span class="other-store-pill" style="font-size:0.73rem; padding:2px 6px; border-radius:4px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-secondary); display:inline-flex; align-items:center; gap:3px;">
-              <span class="store-dot ${locMeta.tagClass ? locMeta.tagClass.replace('tag-', '') + '-dot' : ''}"></span>
-              <strong>${locMeta.label}</strong>: ${alt.totalPrice.toFixed(2)} kr
-            </span>`;
-          }).join(' ');
-
-          alternativesHTML = `
-            <div class="shop-alternatives-row" style="margin-top: 6px; font-size: 0.76rem; color: var(--text-secondary);">
-              <span style="font-weight:600;">Kan også købes i:</span> ${chips}
-            </div>
-          `;
-        }
-      }
-
-      return `
-        <div class="shop-row">
-          <div class="shop-row-left">
-            <div class="shop-ingredient">${liveRemaBadge}${item.productName} ${item.isOffer ? '🔥' : ''} ${pantBadge}</div>
-            <div class="shop-amount">Opskrift bruger: <strong>${item.neededAmount} ${item.neededUnit}</strong> · <span class="pkg-badge" style="font-weight:600;">📦 Købes: ${item.packagesNeeded} hel pk. à ${item.packageSizeText}</span></div>
-            <div class="shop-package-notice" style="font-size:0.73rem; color:var(--text-secondary); margin-top:2px;">(Du betaler for hele pakken i butikken til fuld pris: <strong>${priceDisplay}</strong>)</div>
-            <div class="shop-item-address">
-              <span>📍 Nærmeste <strong>${storeLoc.label}</strong>: ${storeLoc.address}</span>
-              <span class="shop-dist-pill">${storeLoc.distanceText} væk</span>
-            </div>
-            ${alternativesHTML}
-          </div>
-          <div class="shop-row-right">
-            <span class="shop-store-badge ${storeLoc.tagClass} shop-clickable"
-                  data-store="${item.storeKey}"
-                  data-name="${encodeURIComponent(item.productName)}"
-                  data-price="${item.totalPrice || 0}"
-                  data-pant="${item.pant || 0}"
-                  title="Klik for butiksinfo">
-              ${storeLoc.label} ↗
-            </span>
-            <div class="shop-price">${priceDisplay}</div>
-            <div style="font-size:0.70rem; color:var(--gray-400); text-align:right;">fuld butikspris</div>
-            ${item.isOffer && item.normalPrice ? `<span style="font-size:0.75rem; color:var(--gray-400); text-decoration:line-through; display:block;">Normal: ${(item.packagesNeeded * item.normalPrice).toFixed(2)} kr</span>` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    const totalPantNotice = recipeTotalPant > 0 
-      ? `<span>(+ ${recipeTotalPant.toFixed(2)} kr pant = ${(recipeCheapestTotal + recipeTotalPant).toFixed(2)} kr)</span>` 
-      : '';
-
-    // Budget beregning pr. ret
-    let budgetNoticeHTML = '';
-    if (state.budget && state.budget > 0 && !recipeHasMissingPrice) {
-      const isOver = recipeCheapestTotal > state.budget;
-      const diff = Math.abs(recipeCheapestTotal - state.budget);
-      if (isOver) {
-        budgetNoticeHTML = `<div class="recipe-budget-alert over" style="margin-top:8px; padding:6px 10px; border-radius:6px; font-size:0.8rem; font-weight:700;">⚠️ Overskrider dit budget (${state.budget} kr) med <strong>${diff.toFixed(2)} kr</strong></div>`;
-      } else {
-        budgetNoticeHTML = `<div class="recipe-budget-alert within" style="margin-top:8px; padding:6px 10px; border-radius:6px; font-size:0.8rem; font-weight:700;">✅ Inden for dit budget (${state.budget} kr) – <strong>${diff.toFixed(2)} kr</strong> tilovers</div>`;
-      }
-    }
-
-    // Kildehenvisning
-    let sourceLinkHTML = '';
-    if (recipe.sourceUrl) {
-      sourceLinkHTML = `<a href="${recipe.sourceUrl}" target="_blank" rel="noopener noreferrer" class="recipe-source-link" onclick="event.stopPropagation();">🔗 Kilde: ${recipe.source} ↗</a>`;
-    } else if (recipe.source) {
-      sourceLinkHTML = `<span style="font-size:0.78rem; color:var(--gray-500); margin-left:8px;">(${recipe.source})</span>`;
-    }
-
-    // Ernæringsbar (viser næring eller live Open Food Facts knap)
-    let nutrHTML = '';
-    if (recipe.nutrition && (recipe.nutrition.kcal || recipe.nutrition.protein)) {
-      const isLiveOff = recipe.nutritionSource === 'openfoodfacts.org';
-      const s = state.servings || 4;
-      const baseKcal = recipe.nutrition.kcal;
-      const totalKcal = (baseKcal !== undefined && baseKcal !== null) ? Math.round(baseKcal * s) : null;
-      const baseProt = recipe.nutrition.protein;
-      const totalProt = (baseProt !== undefined && baseProt !== null) ? Math.round(baseProt * s) : null;
-      const baseFat = recipe.nutrition.fat;
-      const totalFat = (baseFat !== undefined && baseFat !== null) ? Math.round(baseFat * s) : null;
-      const baseCarbs = recipe.nutrition.carbs;
-      const totalCarbs = (baseCarbs !== undefined && baseCarbs !== null) ? Math.round(baseCarbs * s) : null;
-
-      nutrHTML = `
-        <span class="nutr-pill nutr-kcal" title="${s} personer: ${totalKcal ?? '-'} kcal i alt">⚡ ${baseKcal ?? '—'} kcal/pers ${s > 1 && totalKcal ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalKcal} i alt)</small>` : ''}</span>
-        <span class="nutr-pill nutr-prot" title="${s} personer: ${totalProt ?? '-'}g protein i alt">🥩 ${baseProt ?? '—'}g prot${s > 1 && totalProt ? `<small style="font-size:0.72rem; opacity:0.85;">(${totalProt}g)</small>` : ''}</span>
-        <span class="nutr-pill nutr-fat" title="${s} personer: ${totalFat ?? '-'}g fedt i alt">🥑 ${baseFat ?? '—'}g fedt</span>
-        <span class="nutr-pill nutr-carbs" title="${s} personer: ${totalCarbs ?? '-'}g kulhydrat i alt">🌾 ${baseCarbs ?? '—'}g kulh.</span>
-        ${recipe.nutrition.fiber !== undefined ? `<span class="nutr-pill">🥗 ${recipe.nutrition.fiber}g fibre</span>` : ''}
-        ${isLiveOff ? `<span class="nutr-live-tag">🟢 Open Food Facts</span>` : ''}
-      `;
-    } else {
-      nutrHTML = `
-        <button class="nutr-fetch-btn" id="nutrBtn_${recipe.id}" onclick="fetchLiveRecipeNutrition('${recipe.id}', event)" title="Hent næringsdata live fra Open Food Facts databasen">
-          🥗 Beregn næringsindhold live (Open Food Facts) ⚡
-        </button>
-      `;
-    }
-
-    // Byg Ingrediens-tjekliste med præcise mængder og afkrydsningscirkler (præcis som i opskriften)
-    const ingredientsChecklistHTML = scaledIngredients.map((ri, i) => {
-      let amtStr = '';
-      if (typeof ri.amount === 'number' && ri.amount > 0) {
-        amtStr = Number.isInteger(ri.amount) ? `${ri.amount}` : `${ri.amount.toFixed(1).replace('.0', '')}`;
-      }
-      const unitStr = ri.unit ? ` ${ri.unit}` : '';
-      const nameStr = ri.name || ri.searchKey;
-      return `
-        <li class="recipe-ingredient-check-item">
-          <label class="recipe-ing-check-label">
-            <input type="checkbox" class="recipe-ing-checkbox" data-ing-name="${encodeURIComponent(nameStr)}">
-            <span class="recipe-ing-text"><strong>${amtStr}${unitStr}</strong> ${nameStr}</span>
-          </label>
-        </li>
-      `;
-    }).join('');
-
-    card.innerHTML = `
-      <div class="recipe-card-top">
-        <div class="recipe-emoji-big">${recipe.image ? `<img src="${recipe.image}" alt="${recipe.name}" class="recipe-thumb-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';"><span style="display:none;">${recipe.emoji}</span>` : recipe.emoji}</div>
-        <div class="recipe-main">
-          <div class="recipe-title-row">
-            <h3 class="recipe-title">${recipe.name}</h3>
-            <span class="recipe-badge ${recipe.badgeClass}">${recipe.badge}</span>
-            ${allergyBadgeHTML}
-            ${matchBadgeHTML}
-            ${sourceLinkHTML}
-            <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
-              <button type="button" class="btn btn-secondary btn-sm quick-add-mp-btn" data-recipe-id="${recipe.id}" title="Føj direkte til madplan" style="padding:4px 10px; font-size:0.75rem; font-weight:700; white-space:nowrap; border-radius:999px;">
-                📅 + Madplan
-              </button>
-              <button type="button" class="recipe-fav-btn ${(state.favoriteRecipes || []).includes(recipe.id) ? 'active' : ''}" data-recipe-id="${recipe.id}" title="${(state.favoriteRecipes || []).includes(recipe.id) ? 'Fjern fra favoritter' : 'Tilføj til favoritter'}">
-                ${(state.favoriteRecipes || []).includes(recipe.id) ? '❤️' : '🤍'}
-              </button>
-            </div>
-          </div>
-          <p class="recipe-desc">${recipe.desc}</p>
-          <div class="recipe-meta">
-            <span>⏱️ ${recipe.prepTime} min</span>
-            <span>👥 <strong>${state.servings} personer</strong> ${recipe.servings !== state.servings ? `(skaleret fra ${recipe.servings})` : ''}</span>
-            <span>🥕 ${(state.recipeSearchQuery || (state.ingredients && state.ingredients.length > 0)) ? `${ingMatchCount}/${recipe.ingredients.length} matchende råvarer` : `${recipe.ingredients.length} råvarer`}</span>
-          </div>
-          <div class="nutrition-bar">
-            ${nutrHTML}
-          </div>
-          ${budgetNoticeHTML}
-        </div>
-        <div class="recipe-chevron">▶</div>
-      </div>
-
-      <!-- DROPDOWN INDKØBSLISTE, INGREDIENSER & FREMGANGSMÅDE -->
-      <div class="recipe-dropdown">
-        <div class="recipe-dropdown-grid">
-          
-          <!-- Venstre kolonne: Ingredienser & Fremgangsmåde -->
-          <div class="dropdown-section">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
-              <h3 style="margin:0;">🥗 Ingredienser <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(${state.servings} ${state.servings === 1 ? 'person' : 'personer'} – ${scaledIngredients.length} råvarer)</span></h3>
-              <span style="font-size:0.75rem; color:var(--gray-500);">Kryds af hvad du har</span>
-            </div>
-            <ul class="recipe-ingredients-checklist">
-              ${ingredientsChecklistHTML}
-            </ul>
-
-            <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px 0; flex-wrap:wrap; gap:6px;">
-              <h3 style="margin:0;">👨‍🍳 Fremgangsmåde</h3>
-              <button type="button" class="cook-mode-btn" onclick="toggleCookModeWakeLock(this, event)" title="Hold skærmen tændt mens du laver mad">
-                📱 Hold skærm tændt
-              </button>
-            </div>
-            <ul class="steps-list">
-              ${(recipe.steps || []).map((step, idx) => `
-                <li>
-                  <span class="step-num">${idx + 1}</span>
-                  <span>${step}</span>
-                </li>
-              `).join('')}
-            </ul>
-          </div>
-
-          <!-- Højre kolonne: Indkøbsliste med pakningsberegninger -->
-          <div class="dropdown-section">
-            <h3>🛒 Hvor skal du købe hvad? <span style="font-size:0.75rem; font-weight:normal; color:var(--gray-400);">(Beregnet i hele butikspakker – du betaler for den fulde pakke i butikken)</span></h3>
-            <div class="shopping-list">
-              ${shoppingRowsHTML}
-              <div class="shop-total-row">
-                <span>Samlet bedste pris:</span>
-                <span class="shop-total-price">${recipeCheapestTotal.toFixed(2)} kr ${totalPantNotice}</span>
-              </div>
-            </div>
-
-            <button class="add-recipe-cart-btn btn-primary btn-sm" data-recipe-id="${recipe.id}" style="width:100%; margin:10px 0 6px 0; padding:9px 14px; font-weight:800; cursor:pointer;">
-              🛒 Tilføj denne ret til samlet indkøbsliste (${state.servings} pers.)
-            </button>
-            <button class="add-recipe-mealplan-btn btn-secondary btn-sm" data-recipe-id="${recipe.id}" style="width:100%; margin:0 0 10px 0; padding:8px 14px; font-weight:700; cursor:pointer;">
-              📅 Sæt denne ret på ugens madplan
-            </button>
-
-            ${storesBreakdownHTML}
-
-            <button class="copy-list-btn" data-recipe-id="${recipe.id}">
-              📋 Kopier indkøbsliste & adresser til udklipsholder
-            </button>
-          </div>
-
-        </div>
-      </div>
-    `;
-
-    // Dropdown toggle
-    const topBar = card.querySelector('.recipe-card-top');
-    topBar.addEventListener('click', () => {
-      const wasOpen = card.classList.contains('open');
-      document.querySelectorAll('.recipe-card-outer.open').forEach(c => c.classList.remove('open'));
-      if (!wasOpen) card.classList.add('open');
-    });
-
-    // Tilføj til samlet indkøbsliste knap
-    card.querySelector('.add-recipe-cart-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      addRecipeToShoppingList(recipe);
-    });
-
-    // Føj til madplan knap
-    card.querySelector('.add-recipe-mealplan-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openAddToMealPlanModal(recipe.id);
-    });
-
-    // Hurtig "+ Madplan" knap i toppen af kortet
-    card.querySelector('.quick-add-mp-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openAddToMealPlanModal(recipe.id);
-    });
-
-    // Favorit-knap (❤️) i toppen af kortet
-    card.querySelector('.recipe-fav-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleFavoriteRecipe(recipe.id);
-    });
-
-    // Klikbare butiksbadges i indkøbslisten
-    card.querySelectorAll('.shop-store-badge.shop-clickable').forEach(badge => {
-      badge.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const sKey = badge.dataset.store;
-        const pName = decodeURIComponent(badge.dataset.name);
-        const pPrice = parseFloat(badge.dataset.price);
-        const pPant = parseFloat(badge.dataset.pant || 0);
-        openStoreModal(sKey, pName, pPrice, pPant);
-      });
-    });
-
-    // Kopier indkøbsliste til udklipsholder
-    card.querySelector('.copy-list-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const lines = [
-        `🛒 Indkøbsliste til ${recipe.name} (${state.servings} personer)`,
-        `Samlet pris: ${recipeCheapestTotal.toFixed(2)} kr ${totalPantNotice}`,
-        '',
-        'VARER:',
-        ...recipeIngredientsPrices.map(item => {
-          const loc = getStoreLocationInfo(item.storeKey);
-          return `- ${item.productName}: ${item.packagesNeeded} pk. à ${item.packageSizeText} (${item.hasPrice ? item.totalPrice.toFixed(2) + ' kr' : 'pris mangler'}) hos ${loc.label}, ${loc.address}`;
-        }),
-      ];
-      navigator.clipboard.writeText(lines.join('\n')).then(() => {        showToast('📋 Indkøbsliste kopieret til udklipsholder!', 'success');
-      }).catch(() => {
-        showToast('Kunne ikke kopiere til udklipsholder', 'error');
-      });
-    });
-
-    return card;
-  }
 
   // Paginering for lynhurtig indlæsning og 60 FPS scrolling
   const PAGE_SIZE = 24;
@@ -4052,6 +4098,7 @@ function saveCurrentUserData() {
 
 // ─── TAB NAVIGATION & VISNINGS-STYRING (HJEM, OPSKRIFTER, TILBUD, INDKØB, PROFIL)
 function switchTab(tabName) {
+  if (typeof window !== 'undefined') window.switchTab = switchTab;
   state.activeTab = tabName;
 
   const tabViewMap = {
@@ -5122,6 +5169,9 @@ function getWeeklyAggregatedIngredients() {
     (scaled || []).forEach(ing => {
       const rawName = ing.name || '';
       const sKey = (ing.searchKey || rawName).toLowerCase().trim();
+      if (isWaterIngredient(rawName, sKey)) {
+        return; // Vand skal ikke på ugens indkøbsliste
+      }
       const amount = (typeof ing.amount === 'number' && !isNaN(ing.amount)) ? ing.amount : 1;
       const unit = (ing.unit || 'stk').toLowerCase().trim();
 
