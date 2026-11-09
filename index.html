@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=14" />
+  <link rel="stylesheet" href="style.css?v=15" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -539,7 +539,9 @@
               <span class="countdown-label">⏳ Udløber om:</span>
               <span class="countdown-clock" id="flyerCountdownClock">02d 14t 32m 10s</span>
             </div>
-            
+            <button type="button" id="btnRefreshLiveOffers" class="btn btn-secondary btn-sm" style="margin-top:6px; display:inline-flex; align-items:center; gap:6px; font-weight:700;" title="Synkronisér de nyeste live tilbudsaviser direkte fra butikkerne">
+              🔄 Hent friske live priser
+            </button>
           </div>
         </div>
       </div>
@@ -1333,7 +1335,7 @@
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
   <script src="data.js?v=12"></script>
   <script src="live_offers.js?v=12"></script>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
   <script src="recipes_db.js?v=12" defer></script>
   <!-- FLYDENDE SCROLL TIL TOPPEN KNAP (QoL) -->

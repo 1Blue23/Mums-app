@@ -84,7 +84,7 @@ def main():
         dealer_name = info['name']
         flyer_id = info['flyerId']
         
-        url = f'https://squid-api.tjek.com/v2/offers?dealer_ids={dealer_id}&limit=50'
+        url = f'https://squid-api.tjek.com/v2/offers?dealer_ids={dealer_id}&limit=100'
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
         
         try:
