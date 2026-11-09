@@ -56,6 +56,9 @@ let state = {
   liveNutritionData: {},
   allergies: [],
   autoFilterAllergies: false,
+  favoriteRecipes: [],
+  wakeLockSentinel: null,
+  lastRemovedMeal: null,
   mealPlan: {
     monday: null,
     tuesday: null,
@@ -310,13 +313,17 @@ const dom = {
 
 // ─── TOAST NOTIFIKATION ───────────────────────────────────────────────────────
 let toastTimer = null;
-function showToast(msg, type = '') {
+function showToast(msg, type = '', duration = 3200) {
   if (!dom.toast) return;
-  dom.toast.textContent = msg;
+  if (typeof msg === 'string' && (msg.includes('<') || msg.includes('</'))) {
+    dom.toast.innerHTML = msg;
+  } else {
+    dom.toast.textContent = msg;
+  }
   dom.toast.className = 'toast' + (type ? ' ' + type : '');
   dom.toast.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => dom.toast.classList.add('hidden'), 3200);
+  toastTimer = setTimeout(() => dom.toast.classList.add('hidden'), duration);
 }
 
 // ─── CACHE & CALL TRACKING ────────────────────────────────────────────────────
@@ -2327,6 +2334,7 @@ function loadUserPersistentSettings() {
   state.activeProfileId = data.activeProfileId || 'default_normal';
   state.allergies = Array.isArray(data.allergies) ? data.allergies : (auth.currentUser?.allergies || []);
   state.autoFilterAllergies = Boolean(data.autoFilterAllergies);
+  state.favoriteRecipes = Array.isArray(data.favoriteRecipes) ? data.favoriteRecipes : [];
 
   state.mealPlans = (data.mealPlans && typeof data.mealPlans === 'object') ? data.mealPlans : {};
   state.currentWeekKey = typeof getISOWeekKey === 'function' ? getISOWeekKey(new Date()) : '2026-W45';
@@ -2915,6 +2923,10 @@ function renderRecipeCards(searchResults = {}) {
   if (state.recipeCategoryFilter && state.recipeCategoryFilter !== 'all') {
     const cf = state.recipeCategoryFilter.toLowerCase();
     scoredRecipes = scoredRecipes.filter(({ recipe }) => {
+      if (cf === 'favorites') {
+        const favs = state.favoriteRecipes || [];
+        return favs.includes(recipe.id);
+      }
       const name = (recipe.name || '').toLowerCase();
       const tags = (recipe.tags || []).join(' ').toLowerCase();
       const cat = (recipe.category || '').toLowerCase();
@@ -3334,9 +3346,14 @@ function renderRecipeCards(searchResults = {}) {
             ${allergyBadgeHTML}
             ${matchBadgeHTML}
             ${sourceLinkHTML}
-            <button type="button" class="btn btn-secondary btn-sm quick-add-mp-btn" data-recipe-id="${recipe.id}" title="Føj direkte til madplan" style="margin-left:auto; padding:4px 10px; font-size:0.75rem; font-weight:700; white-space:nowrap; border-radius:999px;">
-              📅 + Madplan
-            </button>
+            <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+              <button type="button" class="btn btn-secondary btn-sm quick-add-mp-btn" data-recipe-id="${recipe.id}" title="Føj direkte til madplan" style="padding:4px 10px; font-size:0.75rem; font-weight:700; white-space:nowrap; border-radius:999px;">
+                📅 + Madplan
+              </button>
+              <button type="button" class="recipe-fav-btn ${(state.favoriteRecipes || []).includes(recipe.id) ? 'active' : ''}" data-recipe-id="${recipe.id}" title="${(state.favoriteRecipes || []).includes(recipe.id) ? 'Fjern fra favoritter' : 'Tilføj til favoritter'}">
+                ${(state.favoriteRecipes || []).includes(recipe.id) ? '❤️' : '🤍'}
+              </button>
+            </div>
           </div>
           <p class="recipe-desc">${recipe.desc}</p>
           <div class="recipe-meta">
@@ -3358,7 +3375,12 @@ function renderRecipeCards(searchResults = {}) {
           
           <!-- Fremgangsmåde -->
           <div class="dropdown-section">
-            <h3>👨‍🍳 Fremgangsmåde</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+              <h3 style="margin:0;">👨‍🍳 Fremgangsmåde</h3>
+              <button type="button" class="cook-mode-btn" onclick="toggleCookModeWakeLock(this, event)" title="Hold skærmen tændt mens du laver mad">
+                📱 Hold skærm tændt
+              </button>
+            </div>
             <ul class="steps-list">
               ${(recipe.steps || []).map((step, idx) => `
                 <li>
@@ -3422,6 +3444,12 @@ function renderRecipeCards(searchResults = {}) {
     card.querySelector('.quick-add-mp-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       openAddToMealPlanModal(recipe.id);
+    });
+
+    // Favorit-knap (❤️) i toppen af kortet
+    card.querySelector('.recipe-fav-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavoriteRecipe(recipe.id);
     });
 
     // Klikbare butiksbadges i indkøbslisten
@@ -3714,6 +3742,27 @@ function renderComparisonTable(searchResults) {
 
 // ─── OPSKRIFTS-HUB: ÉN SAMLET SØGNING & FILTRERING ───────────────────────────
 function initRecipeHubUI() {
+  // 6. QoL: Overrask mig knap
+  document.getElementById('btnSurpriseMe')?.addEventListener('click', surpriseMeDinner);
+
+  // 7. QoL: Portions-pills i opskrifthubben
+  document.querySelectorAll('#recipeServingPillsGroup .servings-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = parseInt(btn.dataset.servings, 10);
+      if (!s) return;
+      if (typeof setMealPlanServings === 'function') {
+        setMealPlanServings(s);
+      } else {
+        state.servings = s;
+        saveCurrentUserData();
+      }
+      document.querySelectorAll('#recipeServingPillsGroup .servings-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.servings, 10) === s);
+      });
+      renderRecipeCards(state.lastSearchResults || {});
+    });
+  });
+
   // 1. Kilde-pills (Alle, Arla, Valdemarsro)
   dom.recipeSourcePills?.forEach(pill => {
     pill.addEventListener('click', () => {
@@ -3817,6 +3866,7 @@ function saveCurrentUserData() {
       mealPlans: state.mealPlans,
       selectedWeekKey: state.selectedWeekKey,
       mealPlanCheckedItems: state.mealPlanCheckedItems,
+      favoriteRecipes: state.favoriteRecipes || [],
     });
   }
 }
@@ -4697,12 +4747,36 @@ function removeMealPlanDay(dayKey) {
   const activePlan = getActiveMealPlan();
   const dayInfo = MEALPLAN_DAYS.find(d => d.key === dayKey);
   const dayName = dayInfo ? dayInfo.label : dayKey;
+  const removedEntry = activePlan[dayKey];
+  if (!removedEntry) return;
+
+  state.lastRemovedMeal = {
+    weekKey: state.selectedWeekKey,
+    dayKey,
+    entry: removedEntry,
+    dayName
+  };
+
   activePlan[dayKey] = null;
+  saveCurrentUserData();
+  renderMealPlanView();
+  renderHomeMealPlanPreview();
+
+  const undoHtml = `🗑️ Ret fjernet fra ${dayName}. <button type="button" onclick="undoRemoveMealPlanDay()" style="background:#ffffff; color:#0f172a; border:1px solid #cbd5e1; border-radius:999px; padding:2px 10px; font-weight:800; margin-left:8px; cursor:pointer;">↩️ Fortryd</button>`;
+  showToast(undoHtml, 'info', 5500);
+}
+
+function undoRemoveMealPlanDay() {
+  if (!state.lastRemovedMeal) return;
+  const { weekKey, dayKey, entry, dayName } = state.lastRemovedMeal;
+  if (!state.mealPlans[weekKey]) state.mealPlans[weekKey] = createEmptyMealPlan();
+  state.mealPlans[weekKey][dayKey] = entry;
+  state.lastRemovedMeal = null;
 
   saveCurrentUserData();
   renderMealPlanView();
   renderHomeMealPlanPreview();
-  showToast(`🗑️ Ret fjernet fra ${dayName}`, 'info');
+  showToast(`✅ Gendannede ret på ${dayName}`, 'success');
 }
 
 function clearWeeklyMealPlan() {
@@ -5658,6 +5732,7 @@ function init() {
   initNutritionProfileUI();
   initShoppingListUI();
   initRecipeHubUI();
+  initBackToTop();
 
   // Uge 3: Tab navigation, Home dashboard, Dedicated shopping page & Profile view
   initTabNavigation();
@@ -6079,3 +6154,126 @@ document.addEventListener('DOMContentLoaded', init);
 
 
 
+
+
+// ─── QoL HJÆLPERE: FAVORITTER, OVERRASK MIG, KOKKETILSTAND & BACK TO TOP ─────
+function toggleFavoriteRecipe(recipeId) {
+  if (!state.favoriteRecipes) state.favoriteRecipes = [];
+  const idx = state.favoriteRecipes.indexOf(recipeId);
+  const recipe = (window.RECIPES || []).find(r => r.id === recipeId);
+  const name = recipe ? recipe.name : 'Ret';
+
+  if (idx > -1) {
+    state.favoriteRecipes.splice(idx, 1);
+    showToast(`🤍 Fjernet "${name}" fra favoritter`, 'info');
+  } else {
+    state.favoriteRecipes.push(recipeId);
+    showToast(`❤️ Gemt "${name}" i favoritter!`, 'success');
+  }
+
+  saveCurrentUserData();
+
+  // Opdater visuelle hjerteknapper
+  document.querySelectorAll(`.recipe-fav-btn[data-recipe-id="${recipeId}"]`).forEach(btn => {
+    const isFav = state.favoriteRecipes.includes(recipeId);
+    btn.classList.toggle('active', isFav);
+    btn.innerHTML = isFav ? '❤️' : '🤍';
+    btn.title = isFav ? 'Fjern fra favoritter' : 'Tilføj til favoritter';
+  });
+
+  if (state.recipeCategoryFilter === 'favorites') {
+    renderRecipeCards(state.lastSearchResults || {});
+  }
+}
+
+function surpriseMeDinner() {
+  const allRecipes = window.RECIPES || [];
+  if (allRecipes.length === 0) return;
+
+  let pool = allRecipes;
+  if (state.recipeSourceFilter && state.recipeSourceFilter !== 'all') {
+    pool = pool.filter(r => r.source === state.recipeSourceFilter);
+  }
+  if (pool.length === 0) pool = allRecipes;
+
+  const randomRecipe = pool[Math.floor(Math.random() * pool.length)];
+
+  if (dom.recipeSearchInput) dom.recipeSearchInput.value = '';
+  state.recipeSearchQuery = '';
+  state.recipeCategoryFilter = 'all';
+  document.querySelectorAll('.recipe-cat-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.cat === 'all');
+  });
+
+  renderRecipeCards(state.lastSearchResults || {});
+
+  setTimeout(() => {
+    const card = document.querySelector(`.recipe-fav-btn[data-recipe-id="${randomRecipe.id}"]`)?.closest('.recipe-card-outer');
+    if (card) {
+      document.querySelectorAll('.recipe-card-outer.open').forEach(c => c.classList.remove('open'));
+      card.classList.add('open', 'highlight-surprise');
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showToast(`🎲 MUMS anbefaler: ${randomRecipe.name}!`, 'success');
+      setTimeout(() => card.classList.remove('highlight-surprise'), 3500);
+    }
+  }, 120);
+}
+
+async function toggleCookModeWakeLock(btnEl, event) {
+  if (event) event.stopPropagation();
+  if (!('wakeLock' in navigator)) {
+    showToast('⚠️ Din browser understøtter ikke Screen Wake Lock', 'info');
+    return;
+  }
+
+  try {
+    if (state.wakeLockSentinel) {
+      await state.wakeLockSentinel.release();
+      state.wakeLockSentinel = null;
+      if (btnEl) {
+        btnEl.classList.remove('active');
+        btnEl.innerHTML = '📱 Hold skærm tændt';
+      }
+      showToast('💤 Kokketilstand deaktiveret', 'info');
+    } else {
+      state.wakeLockSentinel = await navigator.wakeLock.request('screen');
+      if (btnEl) {
+        btnEl.classList.add('active');
+        btnEl.innerHTML = '🟢 Skærm holdes tændt';
+      }
+      showToast('💡 Kokketilstand aktiv: Skærmen holdes vågen!', 'success');
+
+      state.wakeLockSentinel.addEventListener('release', () => {
+        state.wakeLockSentinel = null;
+        if (btnEl) {
+          btnEl.classList.remove('active');
+          btnEl.innerHTML = '📱 Hold skærm tændt';
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Wake Lock fejl:', err);
+    showToast('Kunne ikke aktivere skærm-vågen tilstand', 'info');
+  }
+}
+
+function initBackToTop() {
+  const btn = document.getElementById('btnBackToTop');
+  if (!btn) return;
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 300) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
+    }
+  }, { passive: true });
+
+  btn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+window.toggleFavoriteRecipe = toggleFavoriteRecipe;
+window.surpriseMeDinner = surpriseMeDinner;
+window.toggleCookModeWakeLock = toggleCookModeWakeLock;
+window.undoRemoveMealPlanDay = undoRemoveMealPlanDay;

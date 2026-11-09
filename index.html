@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -404,137 +404,14 @@
     </section>
 
     <!-- ========================================================================= -->
-    <!-- 2. FANEN: OPSKRIFTER (CATALOG, PORTIONER, BUDGET & MATCH)                 -->
+    <!-- 2. FANEN: OPSKRIFTER (CATALOG, PORTIONER, SØG & MATCHER)                 -->
     <!-- ========================================================================= -->
     <section id="tabViewRecipes" class="tab-view hidden">
-      <!-- PORTIONS- & BUDGET KONTROL -->
-      <div class="card servings-budget-bar">
-        <div class="servings-budget-inner">
-          <div class="servings-group">
-            <span class="ctrl-label">👥 Antal personer:</span>
-            <div class="servings-pills">
-              <button class="servings-btn" data-servings="1">1 pers.</button>
-              <button class="servings-btn" data-servings="2">2 pers.</button>
-              <button class="servings-btn active" data-servings="4">4 pers.</button>
-              <button class="servings-btn" data-servings="6">6 pers.</button>
-              <button class="servings-btn" data-servings="8">8 pers.</button>
-            </div>
-            <span class="servings-hint">Skalerer automatisk ingredienser & pakker</span>
-          </div>
-
-          <div class="budget-group">
-            <span class="ctrl-label">💰 Maks. Budget pr. måltid:</span>
-            <div class="budget-input-wrap">
-              <input type="number" id="budgetInput" placeholder="Fx 150" min="10" step="5" class="budget-input" value="150" />
-              <span class="budget-curr">kr</span>
-            </div>
-            <span id="budgetStatusBadge" class="budget-badge-pill within">Inden for budget</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ERNÆRINGSPROFIL & PRÆFERENCER -->
-      <div class="card nutrition-section">
-        <div class="nutrition-header">
-          <div>
-            <h2 class="section-title" style="margin-bottom:4px;">🎯 Dit Ernæringsmål</h2>
-            <p class="section-subtitle">Vælg et hurtigt mål, skift mellem dine egne profiler, eller klik <strong>Indstil selv</strong></p>
-            <div class="profile-manager-row">
-              <div class="profile-select-wrap">
-                <label for="userProfileSelect" class="profile-label">Aktiv profil:</label>
-                <select id="userProfileSelect" class="profile-dropdown">
-                  <option value="none">Standard mål</option>
-                </select>
-              </div>
-              <div class="profile-actions-wrap">
-                <button id="btnNewProfile" class="btn-profile-act" title="Opret ny profil">➕ Ny profil</button>
-                <button id="btnEditProfile" class="btn-profile-act hidden" title="Rediger profil">✏️ Rediger</button>
-                <button id="btnDeleteProfile" class="btn-profile-act btn-profile-danger hidden" title="Slet profil">🗑️ Slet</button>
-              </div>
-            </div>
-          </div>
-          <div class="quick-preset-btns">
-            <button class="preset-pill-btn" data-preset="bulk">💪 Bulk</button>
-            <button class="preset-pill-btn" data-preset="cutting">🔥 Cutting</button>
-            <button class="preset-pill-btn" data-preset="maintain">⚖️ Vedligehold</button>
-            <button id="toggleCustomPrefsBtn" class="preset-pill-btn preset-custom">⚙️ Indstil selv</button>
-            <button id="clearProfile" class="preset-pill-btn preset-clear">× Nulstil</button>
-          </div>
-        </div>
-
-        <!-- TOGGLABLE NUMERIC INPUTS CONTAINER -->
-        <div id="customNutritionWrap" class="custom-nutrition-wrap hidden">
-          <div class="custom-nutrition-banner">
-            <span>Skriv dine specifikke grænser per portion og vælg enhed:</span>
-          </div>
-          <div class="pref-grid">
-            <div class="pref-box">
-              <label class="pref-label">
-                <span>🥩 Protein</span>
-                <span class="pref-sub">Min. ønsket</span>
-              </label>
-              <div class="pref-input-group">
-                <input type="number" id="prefProteinVal" class="pref-num-input" placeholder="fx 40" min="0" step="1" />
-                <select id="prefProteinUnit" class="pref-unit-select">
-                  <option value="g">gram (g)</option>
-                  <option value="mg">mg</option>
-                  <option value="kcal">kcal</option>
-                  <option value="pct">% energi</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="pref-box">
-              <label class="pref-label">
-                <span>🥑 Fedt</span>
-                <span class="pref-sub">Max. ønsket</span>
-              </label>
-              <div class="pref-input-group">
-                <input type="number" id="prefFatVal" class="pref-num-input" placeholder="fx 15" min="0" step="1" />
-                <select id="prefFatUnit" class="pref-unit-select">
-                  <option value="g">gram (g)</option>
-                  <option value="mg">mg</option>
-                  <option value="kcal">kcal</option>
-                  <option value="pct">% energi</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="pref-box">
-              <label class="pref-label">
-                <span>⚡ Kalorier</span>
-                <span class="pref-sub">Mål per portion</span>
-              </label>
-              <div class="pref-input-group">
-                <input type="number" id="prefKcalVal" class="pref-num-input" placeholder="fx 550" min="0" step="10" />
-                <select id="prefKcalUnit" class="pref-unit-select">
-                  <option value="kcal">kcal</option>
-                  <option value="kJ">kJ</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="pref-box">
-              <label class="pref-label">
-                <span>🌾 Kulhydrater</span>
-                <span class="pref-sub">Mål per portion</span>
-              </label>
-              <div class="pref-input-group">
-                <input type="number" id="prefCarbsVal" class="pref-num-input" placeholder="fx 60" min="0" step="1" />
-                <select id="prefCarbsUnit" class="pref-unit-select">
-                  <option value="g">gram (g)</option>
-                  <option value="mg">mg</option>
-                  <option value="kcal">kcal</option>
-                  <option value="pct">% energi</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="profileSummary" class="profile-summary hidden">
-          <span id="profileSummaryText"></span>
-        </div>
+      <!-- Skjulte elementer for bagudkompatibilitet -->
+      <div style="display:none;" aria-hidden="true">
+        <input type="number" id="budgetInput" value="150" />
+        <span id="budgetStatusBadge"></span>
+        <select id="userProfileSelect"><option value="none">Standard</option></select>
       </div>
 
       <!-- EN SAMLET OPSKRIFTS-HUB: FIND, SØG & FILTRÉR BLANDT ALLE RETTER -->
@@ -544,22 +421,42 @@
             <h2 class="section-title" style="margin-bottom:4px;">🍲 Find Retter & Opskrifter</h2>
             <p class="section-subtitle">Gennemse alle 5.900+ retter eller filtrér frit – vælg intet for at se alle retter</p>
           </div>
-          <div class="recipe-source-pills" id="recipeSourcePills">
-            <button class="recipe-source-pill active" data-source="all">🌟 Alle kilder</button>
-            <button class="recipe-source-pill" data-source="Arla">🥛 Arla Opskrifter</button>
-            <button class="recipe-source-pill" data-source="Valdemarsro">🌿 Valdemarsro</button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button type="button" id="btnSurpriseMe" class="btn btn-secondary btn-surprise-me" title="Vælg en tilfældig lækker ret fra databasen">
+              🎲 Overrask mig!
+            </button>
+            <div class="recipe-source-pills" id="recipeSourcePills">
+              <button class="recipe-source-pill active" data-source="all">🌟 Alle kilder</button>
+              <button class="recipe-source-pill" data-source="Arla">🥛 Arla Opskrifter</button>
+              <button class="recipe-source-pill" data-source="Valdemarsro">🌿 Valdemarsro</button>
+            </div>
           </div>
         </div>
 
-        <!-- Råvare & Type hurtig-filtre (Klik for at filtrere - klik igen for alle) -->
-        <div class="recipe-cat-filter-row">
-          <button class="recipe-cat-btn active" data-cat="all">🌟 Alle typer</button>
-          <button class="recipe-cat-btn" data-cat="pasta">🍝 Pasta</button>
-          <button class="recipe-cat-btn" data-cat="kylling">🍗 Kylling</button>
-          <button class="recipe-cat-btn" data-cat="oksekød">🥩 Oksekød</button>
-          <button class="recipe-cat-btn" data-cat="vegetar">🥦 Vegetar</button>
-          <button class="recipe-cat-btn" data-cat="fisk">🐟 Fisk</button>
-          <button class="recipe-cat-btn" data-cat="suppe">🍲 Suppe</button>
+        <!-- Råvare & Type hurtig-filtre samt portioner -->
+        <div class="recipe-hub-toolbar-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+          <div class="recipe-cat-filter-row">
+            <button class="recipe-cat-btn active" data-cat="all">🌟 Alle typer</button>
+            <button class="recipe-cat-btn" data-cat="favorites" id="btnHubFavorites">❤️ Mine Favoritter</button>
+            <button class="recipe-cat-btn" data-cat="pasta">🍝 Pasta</button>
+            <button class="recipe-cat-btn" data-cat="kylling">🍗 Kylling</button>
+            <button class="recipe-cat-btn" data-cat="oksekød">🥩 Oksekød</button>
+            <button class="recipe-cat-btn" data-cat="vegetar">🥦 Vegetar</button>
+            <button class="recipe-cat-btn" data-cat="fisk">🐟 Fisk</button>
+            <button class="recipe-cat-btn" data-cat="suppe">🍲 Suppe</button>
+          </div>
+
+          <!-- Hurtig person-vælger for opskrifter (QoL) -->
+          <div class="recipe-servings-mini-bar" style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);">👥 Portioner:</span>
+            <div class="servings-pills recipe-serving-pills" id="recipeServingPillsGroup">
+              <button type="button" class="servings-btn" data-servings="1">1</button>
+              <button type="button" class="servings-btn" data-servings="2">2</button>
+              <button type="button" class="servings-btn active" data-servings="4">4 pers</button>
+              <button type="button" class="servings-btn" data-servings="6">6</button>
+              <button type="button" class="servings-btn" data-servings="8">8</button>
+            </div>
+          </div>
         </div>
 
         <!-- Enkelt samlet søgefelt og fokus-vælger -->
@@ -612,33 +509,7 @@
           <!-- Filled dynamically by renderRecipeCards() -->
         </div>
 
-        <!-- PRISSAMMENLIGNINGS TABEL -->
-        <div class="card price-comparison-card" style="margin-top:20px;">
-          <div class="results-header">
-            <div>
-              <h2 class="section-title" style="margin-bottom:4px;">💰 Prissammenligning</h2>
-              <div class="pant-banner-badge">
-                <span>🏷️ <strong>Dansk Pant</strong> (Pant A: 1 kr · Pant B: 1,5 kr · Pant C: 3 kr) beregnes automatisk</span>
-              </div>
-            </div>
-            <div class="total-row">
-              <span>Bedste samlede pris:</span>
-              <span id="totalBestPrice" class="total-price">—</span>
-            </div>
-          </div>
-          <div id="comparisonTable" class="comparison-table-wrapper"></div>
-          <div id="winnerBanner" class="winner-banner hidden">
-            <div class="winner-icon">🏆</div>
-            <div>
-              <div class="winner-title">Billigste samlet indkøb</div>
-              <div id="winnerStore" class="winner-store"></div>
-            </div>
-            <div id="winnerPrice" class="winner-price"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- EMPTY STATE -->
+        <!-- EMPTY STATE -->
       <div id="emptyState" class="empty-state hidden">
         <div class="empty-icon">🛒</div>
         <p>Vælg dine ingredienser eller søg en ret foroven</p>
@@ -668,9 +539,7 @@
               <span class="countdown-label">⏳ Udløber om:</span>
               <span class="countdown-clock" id="flyerCountdownClock">02d 14t 32m 10s</span>
             </div>
-            <button id="btnSimulateExpire" class="btn-simulate-expire" title="Simulér avisudløb og aktivér næste avis">
-              ⏩ Simulér avisudløb & skift avis
-            </button>
+            
           </div>
         </div>
       </div>
@@ -1464,8 +1333,10 @@
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
   <script src="data.js?v=12"></script>
   <script src="live_offers.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
   <script src="recipes_db.js?v=12" defer></script>
+  <!-- FLYDENDE SCROLL TIL TOPPEN KNAP (QoL) -->
+  <button id="btnBackToTop" class="btn-back-to-top" title="Rul til toppen">⬆️</button>
 </body>
 </html>
