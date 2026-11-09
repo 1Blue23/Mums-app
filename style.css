@@ -6006,3 +6006,27 @@ body.dark-theme .waste-rec-leftovers {
 body.dark-theme .waste-rec-leftovers span {
   color: #a7f3d0 !important;
 }
+
+/* Hurtig + Madplan knap og ryd-søgeknap i opskriftshubben */
+.quick-add-mp-btn {
+  background: var(--gray-100);
+  border: 1px solid var(--gray-300);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.quick-add-mp-btn:hover {
+  background: var(--primary, #10b981);
+  border-color: var(--primary, #10b981);
+  color: #ffffff !important;
+}
+body.dark-theme .quick-add-mp-btn {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+body.dark-theme .quick-add-mp-btn:hover {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+}

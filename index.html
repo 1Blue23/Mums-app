@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>MUMS – Smart Dansk Mad- & Indkøbsapp</title>
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
   <!-- EmailJS SDK til rigtig email-afsendelse (gratis tier: 200 mails/måned) -->
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script>
@@ -537,21 +537,21 @@
         </div>
       </div>
 
-      <!-- OPSKRIFTSFILTER & ARLA / VALDEMARSRO HUB -->
+      <!-- EN SAMLET OPSKRIFTS-HUB: FIND, SØG & FILTRÉR BLANDT ALLE RETTER -->
       <div class="card recipe-hub-card">
         <div class="recipe-hub-top">
           <div>
             <h2 class="section-title" style="margin-bottom:4px;">🍲 Find Retter & Opskrifter</h2>
-            <p class="section-subtitle">Vælg kilde, søg direkte blandt 5.900+ verificerede retter fra Arla, Valdemarsro og MUMS, eller filtrér efter råvare</p>
+            <p class="section-subtitle">Gennemse alle 5.900+ retter eller filtrér frit – vælg intet for at se alle retter</p>
           </div>
           <div class="recipe-source-pills" id="recipeSourcePills">
-            <button class="recipe-source-pill active" data-source="all">🌟 Alle opskrifter</button>
+            <button class="recipe-source-pill active" data-source="all">🌟 Alle kilder</button>
             <button class="recipe-source-pill" data-source="Arla">🥛 Arla Opskrifter</button>
             <button class="recipe-source-pill" data-source="Valdemarsro">🌿 Valdemarsro</button>
           </div>
         </div>
 
-        <!-- Råvare hurtig-filtre -->
+        <!-- Råvare & Type hurtig-filtre (Klik for at filtrere - klik igen for alle) -->
         <div class="recipe-cat-filter-row">
           <button class="recipe-cat-btn active" data-cat="all">🌟 Alle typer</button>
           <button class="recipe-cat-btn" data-cat="pasta">🍝 Pasta</button>
@@ -562,8 +562,12 @@
           <button class="recipe-cat-btn" data-cat="suppe">🍲 Suppe</button>
         </div>
 
-        <div class="recipe-quick-search-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-          <input type="text" id="recipeSearchInput" placeholder="🔎 Søg direkte blandt alle 5.900+ retter (fx carbonara, kylling i karry, lasagne, laks, suppe...)" class="recipe-search-input" style="flex: 1; min-width: 220px;" />
+        <!-- Enkelt samlet søgefelt og fokus-vælger -->
+        <div class="recipe-quick-search-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px;">
+          <div class="recipe-search-input-wrap" style="position: relative; flex: 1; min-width: 240px;">
+            <input type="text" id="recipeSearchInput" placeholder="🔎 Søg efter ret eller råvare (fx lasagne, kylling, pasta, laks)..." class="recipe-search-input" style="width: 100%; padding-right: 32px;" />
+            <button type="button" id="btnClearRecipeSearch" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 16px; color: var(--gray-400); cursor: pointer; padding: 4px;" title="Ryd søgefelt">✕</button>
+          </div>
           
           <div class="recipe-focus-wrap" style="display: flex; align-items: center; gap: 8px;">
             <label for="recipeFocusSelect" style="font-size: 13px; font-weight: 700; color: var(--text-secondary); white-space: nowrap;">🎯 Fokusér på:</label>
@@ -581,37 +585,11 @@
             <span id="recipeCountDisplay" class="recipe-count-pill">⚡ 5.900+ retter</span>
           </div>
         </div>
-      </div>
 
-      <!-- INGREDIENS INPUT OG BUTIKSVALG (HURTIG SØGNING) -->
-      <div class="card input-section" style="margin-top: 14px;">
-        <div class="section-collapsible-title">
-          <span>🥕 Søg specifikt ud fra dine egne ingredienser</span>
-        </div>
-        <div class="quick-picks">
-          <p class="quick-label">Hurtige råvarer:</p>
-          <div class="quick-buttons">
-            <button class="quick-btn" data-recipe="pasta">🍝 Pasta</button>
-            <button class="quick-btn" data-recipe="chicken">🍗 Kylling</button>
-            <button class="quick-btn" data-recipe="drinks">🥤 Sodavand & Pant</button>
-            <button class="quick-btn" data-recipe="salad">🥗 Salat</button>
-            <button class="quick-btn" data-recipe="soup">🍲 Suppe</button>
-            <button class="quick-btn" data-recipe="fish">🐟 Fisk</button>
-            <button class="quick-btn" data-recipe="eggs">🥚 Æg</button>
-            <button class="quick-btn" data-recipe="beef">🥩 Oksekød</button>
-          </div>
-        </div>
-
-        <div class="ingredient-input-row">
-          <input type="text" id="ingredientInput" class="ingredient-input"
-            placeholder="Fx: kylling, flæskesteg, pasta, eller ingredienser du har..." autocomplete="off" />
-          <button id="addIngredientBtn" class="btn btn-primary">+ Tilføj råvare</button>
-        </div>
-        <div id="ingredientTags" class="ingredient-tags"></div>
-
-        <div class="store-filter">
-          <p class="filter-label">Aktive butikker i sammenligningen:</p>
-          <div class="store-checkboxes" id="storeCheckboxes">
+        <!-- Butikker der sammenlignes på tværs af -->
+        <div class="recipe-stores-bar" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color, #e2e8f0); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary);">🏪 Butikker i sammenligningen:</span>
+          <div class="store-checkboxes" id="storeCheckboxes" style="display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.82rem;">
             <label class="store-check"><input type="checkbox" name="store" value="bilka" checked /><span class="store-dot bilka-dot"></span>Bilka</label>
             <label class="store-check"><input type="checkbox" name="store" value="foetex" checked /><span class="store-dot foetex-dot"></span>Føtex</label>
             <label class="store-check"><input type="checkbox" name="store" value="netto" checked /><span class="store-dot netto-dot"></span>Netto</label>
@@ -620,11 +598,6 @@
             <label class="store-check"><input type="checkbox" name="store" value="coop365" checked /><span class="store-dot coop365-dot"></span>365discount</label>
           </div>
         </div>
-
-        <button id="searchBtn" class="btn btn-search">
-          <span class="btn-icon">🔍</span>
-          Find retter & sammenlign priser
-        </button>
       </div>
 
       <!-- LOADING INDICATOR -->
@@ -1489,10 +1462,10 @@
   </footer>
 
   <!-- MUMS Core App Scripts (Indlæses først så appen starter lynhurtigt) -->
-  <script src="data.js?v=11"></script>
-  <script src="live_offers.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="data.js?v=12"></script>
+  <script src="live_offers.js?v=12"></script>
+  <script src="app.js?v=12"></script>
   <!-- Kæmpe opskriftsdatabase (Indlæses med defer så siden er interaktiv med det samme) -->
-  <script src="recipes_db.js?v=11" defer></script>
+  <script src="recipes_db.js?v=12" defer></script>
 </body>
 </html>

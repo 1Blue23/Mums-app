@@ -2767,10 +2767,12 @@ function renderShoppingListModalContent() {
 
 async function performSearch() {
   const queryTerm = (state.recipeSearchQuery || (dom.recipeSearchInput ? dom.recipeSearchInput.value : '')).trim();
-  
-  if (state.ingredients.length === 0 && !queryTerm) {
-    showToast('Indtast hvad du vil spise (fx lasagne, burger, kylling) eller tilføj en ingrediens', 'info');
-    if (dom.recipeSearchInput) dom.recipeSearchInput.focus();
+
+  // Hvis intet er valgt/tastet, vises alle opskrifter uden blokering
+  if (!queryTerm && state.ingredients.length === 0) {
+    renderRecipeCards({});
+    if (dom.resultsSection) dom.resultsSection.classList.remove('hidden');
+    if (dom.emptyState) dom.emptyState.classList.add('hidden');
     return;
   }
 
@@ -2779,10 +2781,10 @@ async function performSearch() {
     return;
   }
 
-  dom.loadingSection.classList.remove('hidden');
-  dom.emptyState.classList.add('hidden');
-  dom.resultsSection.classList.add('hidden');
-  dom.searchBtn.disabled = true;
+  if (dom.loadingSection) dom.loadingSection.classList.remove('hidden');
+  if (dom.emptyState) dom.emptyState.classList.add('hidden');
+  if (dom.resultsSection) dom.resultsSection.classList.add('hidden');
+  if (dom.searchBtn) dom.searchBtn.disabled = true;
 
   dom.loadingText.textContent = `Henter data parallelt fra 4 API'er (Salling Group, Open Food Facts, REMA 1000, Dansk Retursystem)...`;
 
@@ -2831,9 +2833,9 @@ async function performSearch() {
   renderRecipeCards(searchResults);
   renderComparisonTable(searchResults);
 
-  dom.loadingSection.classList.add('hidden');
-  dom.resultsSection.classList.remove('hidden');
-  dom.searchBtn.disabled = false;
+  if (dom.loadingSection) dom.loadingSection.classList.add('hidden');
+  if (dom.resultsSection) dom.resultsSection.classList.remove('hidden');
+  if (dom.searchBtn) dom.searchBtn.disabled = false;
 
   showToast(`Priser sammenlignet fra 4 API'er og ${state.selectedStores.length} butikker! 🎉`, 'success');
 
@@ -3332,12 +3334,15 @@ function renderRecipeCards(searchResults = {}) {
             ${allergyBadgeHTML}
             ${matchBadgeHTML}
             ${sourceLinkHTML}
+            <button type="button" class="btn btn-secondary btn-sm quick-add-mp-btn" data-recipe-id="${recipe.id}" title="Føj direkte til madplan" style="margin-left:auto; padding:4px 10px; font-size:0.75rem; font-weight:700; white-space:nowrap; border-radius:999px;">
+              📅 + Madplan
+            </button>
           </div>
           <p class="recipe-desc">${recipe.desc}</p>
           <div class="recipe-meta">
             <span>⏱️ ${recipe.prepTime} min</span>
             <span>👥 <strong>${state.servings} personer</strong> ${recipe.servings !== state.servings ? `(skaleret fra ${recipe.servings})` : ''}</span>
-            <span>🥕 ${ingMatchCount}/${recipe.ingredients.length} matchende ingredienser</span>
+            <span>🥕 ${(state.recipeSearchQuery || (state.ingredients && state.ingredients.length > 0)) ? `${ingMatchCount}/${recipe.ingredients.length} matchende råvarer` : `${recipe.ingredients.length} råvarer`}</span>
           </div>
           <div class="nutrition-bar">
             ${nutrHTML}
@@ -3409,6 +3414,12 @@ function renderRecipeCards(searchResults = {}) {
 
     // Føj til madplan knap
     card.querySelector('.add-recipe-mealplan-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAddToMealPlanModal(recipe.id);
+    });
+
+    // Hurtig "+ Madplan" knap i toppen af kortet
+    card.querySelector('.quick-add-mp-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       openAddToMealPlanModal(recipe.id);
     });
@@ -3701,31 +3712,92 @@ function renderComparisonTable(searchResults) {
   }
 }
 
-// ─── OPSKRIFTS-HUB: ARLA & VALDEMARSRO FILTRE & SØGNING ────────────────────────
+// ─── OPSKRIFTS-HUB: ÉN SAMLET SØGNING & FILTRERING ───────────────────────────
 function initRecipeHubUI() {
+  // 1. Kilde-pills (Alle, Arla, Valdemarsro)
   dom.recipeSourcePills?.forEach(pill => {
     pill.addEventListener('click', () => {
+      const src = pill.dataset.source || 'all';
+      const isAlreadyActive = pill.classList.contains('active');
+
       dom.recipeSourcePills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      state.recipeSourceFilter = pill.dataset.source || 'all';
+
+      if (isAlreadyActive && src !== 'all') {
+        state.recipeSourceFilter = 'all';
+        document.querySelector('.recipe-source-pill[data-source="all"]')?.classList.add('active');
+      } else {
+        pill.classList.add('active');
+        state.recipeSourceFilter = src;
+      }
+
       renderRecipeCards(state.lastSearchResults || {});
       dom.resultsSection?.classList.remove('hidden');
       dom.emptyState?.classList.add('hidden');
     });
   });
 
+  // 2. Kategori-pills (Alle, Pasta, Kylling, Oksekød, Vegetar, Fisk, Suppe)
+  const catBtns = document.querySelectorAll('.recipe-cat-btn');
+  catBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.cat || 'all';
+      const isAlreadyActive = btn.classList.contains('active');
+
+      catBtns.forEach(b => b.classList.remove('active'));
+
+      if (isAlreadyActive && cat !== 'all') {
+        state.recipeCategoryFilter = 'all';
+        document.querySelector('.recipe-cat-btn[data-cat="all"]')?.classList.add('active');
+      } else {
+        btn.classList.add('active');
+        state.recipeCategoryFilter = cat;
+      }
+
+      renderRecipeCards(state.lastSearchResults || {});
+      dom.resultsSection?.classList.remove('hidden');
+      dom.emptyState?.classList.add('hidden');
+    });
+  });
+
+  // 3. Samlet søgefelt med live filtrering og ryd-knap
+  const clearBtn = document.getElementById('btnClearRecipeSearch');
   dom.recipeSearchInput?.addEventListener('input', () => {
-    state.recipeSearchQuery = (dom.recipeSearchInput.value || '').trim();
+    const val = (dom.recipeSearchInput.value || '').trim();
+    state.recipeSearchQuery = val;
+    if (clearBtn) clearBtn.style.display = val.length > 0 ? 'block' : 'none';
     renderRecipeCards(state.lastSearchResults || {});
     dom.resultsSection?.classList.remove('hidden');
     dom.emptyState?.classList.add('hidden');
   });
 
+  clearBtn?.addEventListener('click', () => {
+    if (dom.recipeSearchInput) dom.recipeSearchInput.value = '';
+    state.recipeSearchQuery = '';
+    clearBtn.style.display = 'none';
+    renderRecipeCards(state.lastSearchResults || {});
+  });
+
+  // 4. Fokus-vælger dropdown
   dom.recipeFocusSelect?.addEventListener('change', (e) => {
     state.recipeFocus = e.target.value;
     renderRecipeCards(state.lastSearchResults || {});
     dom.resultsSection?.classList.remove('hidden');
     dom.emptyState?.classList.add('hidden');
+  });
+
+  // 5. Butiks-afkrydsning i opskrifthubben
+  document.querySelectorAll('#storeCheckboxes input[name="store"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const checkedBoxes = [...document.querySelectorAll('#storeCheckboxes input[name="store"]:checked')];
+      if (checkedBoxes.length === 0) {
+        cb.checked = true;
+        showToast('Vælg mindst én butik', 'info');
+        return;
+      }
+      state.selectedStores = checkedBoxes.map(c => c.value);
+      saveCurrentUserData();
+      renderRecipeCards(state.lastSearchResults || {});
+    });
   });
 }
 
