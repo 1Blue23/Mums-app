@@ -1759,6 +1759,43 @@ function findProductDbMatch(name = '', searchKey = '') {
     return 'salt';
   }
 
+    // Krydderier, saft, urter & smagsgivere (Direkte højprioritetsmatch)
+  if (/(citronsaft|citron saft|saft af citron)/i.test(n) || sk === 'citronsaft') return 'citronsaft';
+  if (/(limesaft|lime saft|saft af lime)/i.test(n) || sk === 'limesaft') return 'limesaft';
+  if (/(citron|citroner|citronskal)/i.test(n) || sk === 'citron') return 'citron';
+  if (/(lime|limes|limeskal)/i.test(n) || sk === 'lime') return 'lime';
+  if (/(groft salt|flagesalt|bordsalt|fint salt|havsalt|salt)/i.test(n) || sk === 'salt') return 'salt';
+  if ((/(friskkværnet peber|sort peber|hvidt peber|peberkorn|stødt peber|peber)/i.test(n) || sk === 'peber') && !/(peberfrugt|chilipeber|cayennepeber)/i.test(n)) return 'peber';
+  if (/(oregano|tørret oregano)/i.test(n) || sk === 'oregano') return 'oregano';
+  if (/(timian|frisk timian|tørret timian)/i.test(n) || sk === 'timian') return 'timian';
+  if (/(rosmarin|frisk rosmarin|tørret rosmarin)/i.test(n) || sk === 'rosmarin') return 'rosmarin';
+  if (/(spidskommen|stødt spidskommen)/i.test(n) || sk === 'spidskommen') return 'spidskommen';
+  if (/(paprika|sød paprika|røget paprika)/i.test(n) || sk === 'paprika') return 'paprika';
+  if (/(karry|karrypulver)/i.test(n) || sk === 'karry') return 'karry';
+  if (/(chili|chiliflager|cayennepeber)/i.test(n) || sk === 'chili') return 'chili';
+  if (/(kanel|stødt kanel)/i.test(n) || sk === 'kanel') return 'kanel';
+  if (/(muskat|muskatnød)/i.test(n) || sk === 'muskatnød') return 'muskatnød';
+  if (/(kardemomme)/i.test(n) || sk === 'kardemomme') return 'kardemomme';
+  if (/(sojasauce|sojasovs|soja)/i.test(n) || sk === 'sojasauce') return 'sojasauce';
+  if (/(balsamico|balsamicoeddike)/i.test(n) || sk === 'balsamico') return 'balsamico';
+  if (/(æbleeddike|æblecidereddike|hvidvinseddike|rødvinseddike|eddike)/i.test(n) || sk === 'eddike') return 'eddike';
+  if (/(dijonsennep|grov sennep|fransk sennep|sennep)/i.test(n) || sk === 'sennep') return 'sennep';
+  if (/(honning|flydende honning)/i.test(n) || sk === 'honning') return 'honning';
+  if (/(tomatpuré|tomatpure)/i.test(n) || sk === 'tomatpure' || sk === 'tomatpuré') return 'tomatpure';
+  if (/(grøntsagsbouillon|bouillon|bouillonterning)/i.test(n) || sk === 'grøntsagsbouillon' || sk === 'bouillon') return 'grøntsagsbouillon';
+  if (/(hønsebouillon)/i.test(n) || sk === 'hønsebouillon') return 'hønsebouillon';
+  if (/(oksebouillon)/i.test(n) || sk === 'oksebouillon') return 'oksebouillon';
+  if (/(olivenolie|jomfruolivenolie)/i.test(n) || sk === 'olivenolie') return 'olivenolie';
+  if (/(rapsolie|solsikkeolie|madolie|stegolie|olie til stegning)/i.test(n) || sk === 'olie') return 'olie';
+  if (/(smør|smørbar|stegesmør)/i.test(n) || sk === 'smør') return 'smør';
+  if (/(hvidløg|hvidløgsfed)/i.test(n) || sk === 'hvidløg') return 'hvidløg';
+  if (/(ingefær|frisk ingefær)/i.test(n) || sk === 'ingefær') return 'ingefær';
+  if (/(frisk dild|dild)/i.test(n) || sk === 'dild') return 'dild';
+  if (/(bredbladet persille|kruspersille|frisk persille|persille)/i.test(n) || sk === 'persille') return 'persille';
+  if (/(frisk basilikum|basilikum)/i.test(n) || sk === 'basilikum') return 'basilikum';
+  if (/(frisk koriander|koriander)/i.test(n) || sk === 'koriander') return 'koriander';
+  if (/(frisk purløg|purløg)/i.test(n) || sk === 'purløg') return 'purløg';
+
   // 2. Direkte nøglematch på valideret sk og n
   if (sk && PRODUCT_DB[sk]) return sk;
   if (PRODUCT_DB[n]) return n;

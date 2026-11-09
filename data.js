@@ -1862,8 +1862,11 @@ const RECIPES = [
       { name: 'hakket kød',    amount: 500, unit: 'g',   searchKey: 'kød' },
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
       { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
-      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
-    ],
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Tørret oregano', amount: 1, unit: 'tsk', searchKey: 'oregano' }
+      ],
     steps: [
       'Kog pasta efter anvisning på pakken i saltet vand',
       'Svits hakket kød på høj varme til brunet og gennemstegt',
@@ -1891,8 +1894,11 @@ const RECIPES = [
       { name: 'kylling',       amount: 400, unit: 'g',   searchKey: 'kylling' },
       { name: 'ris',           amount: 200, unit: 'g',   searchKey: 'ris' },
       { name: 'broccoli',      amount: 200, unit: 'g',   searchKey: 'broccoli' },
-      { name: 'gulerod',       amount: 150, unit: 'g',   searchKey: 'gulerod' },
-    ],
+      { name: 'gulerod',       amount: 150, unit: 'g',   searchKey: 'gulerod' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Paprika', amount: 1, unit: 'tsk', searchKey: 'paprika' }
+      ],
     steps: [
       'Kog ris efter anvisning (ca. 18 min)',
       'Skær kylling i strimler og krydr med paprika, salt og peber',
@@ -1919,8 +1925,10 @@ const RECIPES = [
       { name: 'laks',          amount: 400, unit: 'g',   searchKey: 'fisk' },
       { name: 'kartoffel',     amount: 500, unit: 'g',   searchKey: 'kartoffel' },
       { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
-      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
-    ],
+      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Frisk dild', amount: 0.5, unit: 'bundt', searchKey: 'dild' }
+      ],
     steps: [
       'Forvarm ovn til 200°C',
       'Skær kartofler i tern, vend i olie og krydr – bag 25 min',
@@ -1947,8 +1955,10 @@ const RECIPES = [
       { name: 'æg',            amount: 3,   unit: 'stk', searchKey: 'æg' },
       { name: 'spinat',        amount: 100, unit: 'g',   searchKey: 'spinat' },
       { name: 'feta',          amount: 50,  unit: 'g',   searchKey: 'feta' },
-      { name: 'løg',           amount: 50,  unit: 'g',   searchKey: 'løg' },
-    ],
+      { name: 'løg',           amount: 50,  unit: 'g',   searchKey: 'løg' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Pisk æg med salt og peber',
       'Svits spinat og løg i panden 2 min',
@@ -1976,8 +1986,12 @@ const RECIPES = [
       { name: 'salat',         amount: 150, unit: 'g',   searchKey: 'salat' },
       { name: 'tomat',         amount: 150, unit: 'g',   searchKey: 'tomat' },
       { name: 'agurk',         amount: 1,   unit: 'stk', searchKey: 'agurk' },
-      { name: 'feta',          amount: 80,  unit: 'g',   searchKey: 'feta' },
-    ],
+      { name: 'feta',          amount: 80,  unit: 'g',   searchKey: 'feta' },,
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Paprika', amount: 1, unit: 'tsk', searchKey: 'paprika' },
+        { name: 'Balsamico', amount: 1, unit: 'spsk', searchKey: 'balsamico' },
+        { name: 'Olivenolie', amount: 2, unit: 'spsk', searchKey: 'olivenolie' }
+      ],
     steps: [
       'Grill kyllingestrimler i 6-8 min med paprika og olie',
       'Skær tomat, agurk og rødløg i tern',
@@ -2035,8 +2049,12 @@ const RECIPES = [
       { name: 'kartoffel',     amount: 400, unit: 'g',   searchKey: 'kartoffel' },
       { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
       { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
-      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
-    ],
+      { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Timian', amount: 1, unit: 'tsk', searchKey: 'timian' },
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' }
+      ],
     steps: [
       'Skær kød i tern og brun i gryde ved høj varme',
       'Tilsæt hakkede løg og svits 3 min',
@@ -2064,8 +2082,12 @@ const RECIPES = [
       { name: 'linser',        amount: 300, unit: 'g',   searchKey: 'linser' },
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
       { name: 'løg',           amount: 200, unit: 'g',   searchKey: 'løg' },
-      { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
-    ],
+      { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },,
+        { name: 'Citron', amount: 1, unit: 'stk', searchKey: 'citron' },
+        { name: 'Karry', amount: 1, unit: 'spsk', searchKey: 'karry' },
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' },
+        { name: 'Hvidløg', amount: 2, unit: 'fed', searchKey: 'hvidløg' }
+      ],
     steps: [
       'Svits løg og hvidløg 3 min',
       'Tilsæt gulerødder og karry – rør 1 min',
@@ -2096,8 +2118,11 @@ const RECIPES = [
       { name: 'ris',           amount: 300, unit: 'g',   searchKey: 'ris' },
       { name: 'æble',          amount: 2,   unit: 'stk', searchKey: 'æble' },
       { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
-      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
-    ],
+      { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Karry', amount: 1, unit: 'spsk', searchKey: 'karry' }
+      ],
     steps: [
       'Kog risene efter anvisning',
       'Brun kyllingestykkerne på panden i karry og olie',
@@ -2125,8 +2150,11 @@ const RECIPES = [
       { name: 'laks',          amount: 400, unit: 'g',   searchKey: 'fisk' },
       { name: 'spinat',        amount: 200, unit: 'g',   searchKey: 'spinat' },
       { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
-      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
-    ],
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },,
+        { name: 'Citronsaft', amount: 1, unit: 'spsk', searchKey: 'citronsaft' },
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Kog pastaen i letsaltet vand',
       'Steg laks i tern let på panden 3-4 min',
@@ -2154,8 +2182,9 @@ const RECIPES = [
       { name: 'pasta',         amount: 300, unit: 'g',   searchKey: 'pasta' },
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
       { name: 'mælk',          amount: 500, unit: 'ml',  searchKey: 'mælk' },
-      { name: 'ost',           amount: 150, unit: 'g',   searchKey: 'ost' },
-    ],
+      { name: 'ost',           amount: 150, unit: 'g',   searchKey: 'ost' },,
+        { name: 'Smør', amount: 25, unit: 'g', searchKey: 'smør' }
+      ],
     steps: [
       'Brun kødet og tilsæt hakkede tomater og krydderier',
       'Lav bechamelsauce med smør, mel og mælk',
@@ -2181,8 +2210,11 @@ const RECIPES = [
       { name: 'kartoffel',     amount: 600, unit: 'g',   searchKey: 'kartoffel' },
       { name: 'porre',         amount: 300, unit: 'g',   searchKey: 'porre' },
       { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
-      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },
-    ],
+      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' }
+      ],
     steps: [
       'Svits porre og løg i en gryde uden at brune',
       'Tilsæt kartoffeltern og bouillon – kog møre i 20 min',
@@ -2239,8 +2271,9 @@ const RECIPES = [
       { name: 'kokosmælk',     amount: 400, unit: 'ml',  searchKey: 'kokosmælk' },
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
       { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
-      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
-    ],
+      { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },,
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' }
+      ],
     steps: [
       'Svits hakket løg, hvidløg og krydderier i olie',
       'Tilsæt skyllede røde linser og vend rundt',
@@ -2267,8 +2300,9 @@ const RECIPES = [
       { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
       { name: 'spinat',        amount: 150, unit: 'g',   searchKey: 'spinat' },
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
-      { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },
-    ],
+      { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },,
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' }
+      ],
     steps: [
       'Kom ukogt pasta, kyllingestrimler og grøntsager i en bred gryde',
       'Hæld hakkede tomater og bouillon over',
@@ -2294,8 +2328,10 @@ const RECIPES = [
       { name: 'græskar',       amount: 600, unit: 'g',   searchKey: 'græskar' },
       { name: 'kokosmælk',     amount: 400, unit: 'ml',  searchKey: 'kokosmælk' },
       { name: 'gulerod',       amount: 200, unit: 'g',   searchKey: 'gulerod' },
-      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },
-    ],
+      { name: 'løg',           amount: 100, unit: 'g',   searchKey: 'løg' },,
+        { name: 'Karry', amount: 1, unit: 'spsk', searchKey: 'karry' },
+        { name: 'Bouillon', amount: 1, unit: 'terning', searchKey: 'grøntsagsbouillon' }
+      ],
     steps: [
       'Svits løg og karry i gryden i 2 minutter',
       'Tilsæt græskar og gulerødder i tern med bouillon',
@@ -2349,8 +2385,9 @@ const RECIPES = [
       { name: 'broccoli',      amount: 200, unit: 'g',   searchKey: 'broccoli' },
       { name: 'gulerod',       amount: 150, unit: 'g',   searchKey: 'gulerod' },
       { name: 'ris',           amount: 200, unit: 'g',   searchKey: 'ris' },
-      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
-    ],
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },,
+        { name: 'Sojasauce', amount: 2, unit: 'spsk', searchKey: 'sojasauce' }
+      ],
     steps: [
       'Kog risene efter anvisning',
       'Lynsteg oksekødsstrimler i rygende varm wok 2 minutter – tag op',
@@ -2378,8 +2415,11 @@ const RECIPES = [
       { name: 'fisk',          amount: 300, unit: 'g',   searchKey: 'fisk' },
       { name: 'kartoffel',     amount: 400, unit: 'g',   searchKey: 'kartoffel' },
       { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
-      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
-    ],
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Frisk persille', amount: 1, unit: 'håndfuld', searchKey: 'persille' }
+      ],
     steps: [
       'Kog kartofler møre i saltet vand',
       'Vend fiskefileterne i mel, salt og peber',
@@ -2408,8 +2448,9 @@ const RECIPES = [
       { name: 'bacon',         amount: 200, unit: 'g',   searchKey: 'bacon' },
       { name: 'æg',            amount: 4,   unit: 'stk', searchKey: 'æg' },
       { name: 'ost',           amount: 80,  unit: 'g',   searchKey: 'ost' },
-      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
-    ],
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },,
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Kog spaghettien i rigeligt letsaltet vand til den er al dente',
       'Skær bacon i tern og rist dem sprøde på en tør pande ved middel varme',
@@ -2466,8 +2507,11 @@ const RECIPES = [
       { name: 'kylling',       amount: 500, unit: 'g',   searchKey: 'kylling' },
       { name: 'bacon',         amount: 150, unit: 'g',   searchKey: 'bacon' },
       { name: 'fløde',         amount: 250, unit: 'ml',  searchKey: 'fløde' },
-      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
-    ],
+      { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Karry', amount: 1, unit: 'spsk', searchKey: 'karry' }
+      ],
     steps: [
       'Kog pasta i rigeligt letsaltet vand',
       'Steg bacon sprødt i en gryde eller dyb pande – læg til side på køkkenrulle',
@@ -2496,8 +2540,9 @@ const RECIPES = [
       { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
       { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
       { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
-      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
-    ],
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },,
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Kog pastaen al dente i saltet vand',
       'Rens svampene, skær i skiver og rist dem gyldne i smør på panden',
@@ -2525,8 +2570,9 @@ const RECIPES = [
       { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
       { name: 'ost',           amount: 200, unit: 'g',   searchKey: 'ost' },
       { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
-      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
-    ],
+      { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },,
+        { name: 'Tørret oregano', amount: 1, unit: 'tsk', searchKey: 'oregano' }
+      ],
     steps: [
       'Kog pastaen 2 minutter kortere end anvisningen',
       'Svits løg og hvidløg i en gryde og tilsæt hakkede tomater og oregano',
@@ -2586,8 +2632,10 @@ const RECIPES = [
       { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
       { name: 'løg',           amount: 150, unit: 'g',   searchKey: 'løg' },
       { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
-      { name: 'æg',            amount: 1,   unit: 'stk', searchKey: 'æg' },
-    ],
+      { name: 'æg',            amount: 1,   unit: 'stk', searchKey: 'æg' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Rør oksekødet sejt med salt, peber, æg og fintrevet hvidløg – form til små kødboller',
       'Brun kødbollerne på panden i lidt olie til de har stegeskorpe',
@@ -2643,8 +2691,11 @@ const RECIPES = [
       { name: 'feta',          amount: 200, unit: 'g',   searchKey: 'feta' },
       { name: 'tomat',         amount: 500, unit: 'g',   searchKey: 'tomat' },
       { name: 'hvidløg',       amount: 20,  unit: 'g',   searchKey: 'hvidløg' },
-      { name: 'basilikum',     amount: 1,   unit: 'stk', searchKey: 'basilikum' },
-    ],
+      { name: 'basilikum',     amount: 1,   unit: 'stk', searchKey: 'basilikum' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' },
+        { name: 'Olivenolie', amount: 2, unit: 'spsk', searchKey: 'olivenolie' }
+      ],
     steps: [
       'Læg en hel blok feta midt i et ovnfast fad omgivet af cherrytomater og hele hvidløgsfed',
       'Dryp med olivenolie, salt og peber, og bag ved 200 grader i 25-30 minutter',
@@ -2700,8 +2751,10 @@ const RECIPES = [
     ingredients: [
       { name: 'pasta',         amount: 400, unit: 'g',   searchKey: 'pasta' },
       { name: 'ost',           amount: 150, unit: 'g',   searchKey: 'ost' },
-      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
-    ],
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Kog pasta i vand med mindre salt end normalt (osten er salt)',
       'Rist masser af groftkværnet sort peber på en tør pande 1 minut for aroma',
@@ -2730,8 +2783,9 @@ const RECIPES = [
       { name: 'tomat',         amount: 400, unit: 'g',   searchKey: 'tomat' },
       { name: 'løg',           amount: 120, unit: 'g',   searchKey: 'løg' },
       { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
-      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },
-    ],
+      { name: 'citron',        amount: 1,   unit: 'stk', searchKey: 'citron' },,
+        { name: 'Citronsaft', amount: 1, unit: 'spsk', searchKey: 'citronsaft' }
+      ],
     steps: [
       'Svits hakket løg og hvidløg gyldent i olie på panden',
       'Tilsæt hakkede tomater og lad simre i 10 minutter',
@@ -2760,8 +2814,10 @@ const RECIPES = [
       { name: 'fløde',         amount: 200, unit: 'ml',  searchKey: 'fløde' },
       { name: 'hvidløg',       amount: 15,  unit: 'g',   searchKey: 'hvidløg' },
       { name: 'persille',      amount: 25,  unit: 'g',   searchKey: 'persille' },
-      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },
-    ],
+      { name: 'smør',          amount: 30,  unit: 'g',   searchKey: 'smør' },,
+        { name: 'Salt', amount: 1, unit: 'tsk', searchKey: 'salt' },
+        { name: 'Friskkværnet peber', amount: 0.5, unit: 'tsk', searchKey: 'peber' }
+      ],
     steps: [
       'Skær svampene i kvarte og steg ved god varme i smør til al væde er fordampet og de er gyldne',
       'Tilsæt hakket hvidløg og svits 1 minut',
@@ -2788,8 +2844,9 @@ const RECIPES = [
       { name: 'citron',        amount: 2,   unit: 'stk', searchKey: 'citron' },
       { name: 'smør',          amount: 50,  unit: 'g',   searchKey: 'smør' },
       { name: 'ost',           amount: 100, unit: 'g',   searchKey: 'ost' },
-      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },
-    ],
+      { name: 'persille',      amount: 20,  unit: 'g',   searchKey: 'persille' },,
+        { name: 'Citronsaft', amount: 1, unit: 'spsk', searchKey: 'citronsaft' }
+      ],
     steps: [
       'Kog pasta i rigeligt letsaltet vand',
       'Smelt smør på en pande med fintrevet citronskal (kun det gule) og 2 spsk citronsaft',
@@ -2822,6 +2879,31 @@ if (typeof window !== 'undefined') {
 // ─── VERIFICERET PRODUKT- & PRISDATABASE (6 aktive danske butikker) ──────────
 // Realistiske markedspriser for over 180 udbredte råvarer opdateret til 2026.
 const PRODUCT_DB = {
+  'limesaft': {
+    netto: { name: 'Økologisk Limesaft 200ml', price: 12.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    rema: { name: 'REMA 1000 Limesaft 200ml', price: 11.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    lidl: { name: 'Limesaft 200ml', price: 11.50, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    coop365: { name: '365 Øko Limesaft 200ml', price: 12.50, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    foetex: { name: 'Salling Limesaft 200ml', price: 13.95, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+    bilka: { name: 'Limesaft Koncentrat 200ml', price: 13.50, unit: '200ml', packageAmount: 200, packageUnit: 'ml' },
+  },
+  'kardemomme': {
+    netto: { name: 'Stødt Kardemomme 35g', price: 15.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Kardemomme 35g', price: 14.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    lidl: { name: 'Kania Kardemomme 35g', price: 13.95, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    coop365: { name: '365 Kardemomme 35g', price: 15.50, unit: '35g', packageAmount: 35, packageUnit: 'g' },
+    foetex: { name: 'Santa Maria Kardemomme 38g', price: 18.95, unit: '38g', packageAmount: 38, packageUnit: 'g' },
+    bilka: { name: 'Santa Maria Kardemomme 38g', price: 18.95, unit: '38g', packageAmount: 38, packageUnit: 'g' },
+  },
+  'tomatpuré': {
+    netto: { name: 'Netto Tomatpuré 140g', price: 5.50, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    rema: { name: 'REMA 1000 Tomatpuré 140g', price: 4.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    lidl: { name: 'Baresa Tomatpuré 140g', price: 4.85, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    coop365: { name: '365 Øko Tomatpuré 140g', price: 5.95, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    foetex: { name: 'Salling Tomatpuré 140g', price: 6.25, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+    bilka: { name: 'Salling Tomatpuré 140g', price: 6.25, unit: '140g', packageAmount: 140, packageUnit: 'g' },
+  },
+
   'hakket oksekød': {
     netto: { name: 'Netto Hakket Oksekød 500g', price: 39.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
     rema: { name: 'REMA 1000 Hakket Oksekød 500g', price: 38.95, unit: '500g', packageAmount: 500, packageUnit: 'g' },
